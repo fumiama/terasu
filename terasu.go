@@ -9,5 +9,5 @@ import (
 func Use(conn *tls.Conn) *tls.Conn {
 	trsConn := (*trsconn)(unsafe.Pointer(conn))
 	trsConn.handshakeFn = trsConn.clientHandshake
-	return conn
+	return (*tls.Conn)(unsafe.Pointer(trsConn))
 }
