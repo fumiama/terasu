@@ -29,10 +29,15 @@ func main() {
 				if err != nil {
 					return nil, err
 				}
-				return terasu.Use(tls.Client(conn, &tls.Config{
-					ServerName:         host,
-					InsecureSkipVerify: true,
-				})), nil
+				tlsConn := tls.Client(conn, &tls.Config{
+					ServerName: host,
+				})
+				err = terasu.Use(tlsConn).Handshake()
+				if err != nil {
+					_ = tlsConn.Close()
+					return nil, err
+				}
+				return tlsConn, nil
 			},
 		},
 	}

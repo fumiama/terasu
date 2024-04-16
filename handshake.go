@@ -228,7 +228,7 @@ const (
 )
 
 type clientHandshakeStateTLS13 struct {
-	c           *trsconn
+	c           *Conn
 	ctx         context.Context
 	serverHello *serverHelloMsg
 	hello       *clientHelloMsg
@@ -272,7 +272,7 @@ type finishedHash struct {
 }
 
 type clientHandshakeState struct {
-	c            *trsconn
+	c            *Conn
 	ctx          context.Context
 	serverHello  *serverHelloMsg
 	hello        *clientHelloMsg
@@ -308,7 +308,7 @@ func (c *_trsconn) writeHandshakeRecord(msg handshakeMessage, transcript transcr
 	return c.writeRecordLocked(recordTypeHandshake, data)
 }
 
-func (cout *trsconn) clientHandshake(ctx context.Context) (err error) {
+func (cout *Conn) clientHandshake(ctx context.Context) (err error) {
 	c := (*_trsconn)(unsafe.Pointer(cout))
 
 	if c.config == nil {

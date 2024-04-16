@@ -17,10 +17,16 @@ func TestHTTPDialTLS13(t *testing.T) {
 					return nil, err
 				}
 				t.Log("net.Dial succeeded")
-				return Use(tls.Client(conn, &tls.Config{
+				tlsConn := tls.Client(conn, &tls.Config{
 					ServerName:         "huggingface.co",
 					InsecureSkipVerify: true,
-				})), nil
+				})
+				err = Use(tlsConn).Handshake()
+				if err != nil {
+					_ = tlsConn.Close()
+					return nil, err
+				}
+				return tlsConn, nil
 			},
 		},
 	}
@@ -48,11 +54,17 @@ func TestHTTPDialTLS12(t *testing.T) {
 					return nil, err
 				}
 				t.Log("net.Dial succeeded")
-				return Use(tls.Client(conn, &tls.Config{
+				tlsConn := tls.Client(conn, &tls.Config{
 					ServerName:         "huggingface.co",
 					InsecureSkipVerify: true,
 					MaxVersion:         tls.VersionTLS12,
-				})), nil
+				})
+				err = Use(tlsConn).Handshake()
+				if err != nil {
+					_ = tlsConn.Close()
+					return nil, err
+				}
+				return tlsConn, nil
 			},
 		},
 	}

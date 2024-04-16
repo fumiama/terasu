@@ -57,7 +57,7 @@ type halfConn struct {
 	trafficSecret []byte                  // current TLS 1.3 traffic secret
 }
 
-type trsconn tls.Conn
+type Conn tls.Conn
 
 // A _trsconn represents a secured connection.
 // It implements the net._trsconn interface.
