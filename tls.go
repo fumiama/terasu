@@ -57,9 +57,11 @@ type halfConn struct {
 	trafficSecret []byte                  // current TLS 1.3 traffic secret
 }
 
-// A trsconn represents a secured connection.
-// It implements the net.trsconn interface.
-type trsconn struct {
+type trsconn tls.Conn
+
+// A _trsconn represents a secured connection.
+// It implements the net._trsconn interface.
+type _trsconn struct {
 	// constant
 	conn        net.Conn
 	isClient    bool
@@ -139,12 +141,12 @@ type trsconn struct {
 var outBufPool sync.Pool
 
 //go:linkname tlsWriteRecordLocked crypto/tls.(*Conn).writeRecordLocked
-func tlsWriteRecordLocked(c *trsconn, typ recordType, data []byte) (int, error)
+func tlsWriteRecordLocked(c *_trsconn, typ recordType, data []byte) (int, error)
 
 //go:linkname maxPayloadSizeForWrite crypto/tls.(*Conn).maxPayloadSizeForWrite
-func maxPayloadSizeForWrite(c *trsconn, typ recordType) int
+func maxPayloadSizeForWrite(c *_trsconn, typ recordType) int
 
-func (c *trsconn) maxPayloadSizeForWrite(typ recordType) int {
+func (c *_trsconn) maxPayloadSizeForWrite(typ recordType) int {
 	return maxPayloadSizeForWrite(c, typ)
 }
 
@@ -162,16 +164,16 @@ func (hc *halfConn) encrypt(record, payload []byte, rand io.Reader) ([]byte, err
 func rand(c *tls.Config) io.Reader
 
 //go:linkname write crypto/tls.(*Conn).write
-func write(c *trsconn, data []byte) (int, error)
+func write(c *_trsconn, data []byte) (int, error)
 
-func (c *trsconn) write(data []byte) (int, error) {
+func (c *_trsconn) write(data []byte) (int, error) {
 	return write(c, data)
 }
 
 //go:linkname flush crypto/tls.(*Conn).flush
-func flush(c *trsconn) (int, error)
+func flush(c *_trsconn) (int, error)
 
-func (c *trsconn) flush() (int, error) {
+func (c *_trsconn) flush() (int, error) {
 	return flush(c)
 }
 
@@ -183,15 +185,15 @@ func (hc *halfConn) changeCipherSpec() error {
 }
 
 //go:linkname sendAlertLocked crypto/tls.(*Conn).sendAlertLocked
-func sendAlertLocked(c *trsconn, err alert) error
+func sendAlertLocked(c *_trsconn, err alert) error
 
-func (c *trsconn) sendAlertLocked(err alert) error {
+func (c *_trsconn) sendAlertLocked(err alert) error {
 	return sendAlertLocked(c, err)
 }
 
 // writeRecordLocked writes a TLS record with the given type and payload to the
 // connection and updates the record layer state.
-func writeRecordLocked(c *trsconn, typ recordType, data []byte) (int, error) {
+func (c *_trsconn) writeRecordLocked(typ recordType, data []byte) (int, error) {
 	if c.quic != nil {
 		return tlsWriteRecordLocked(c, typ, data)
 	}

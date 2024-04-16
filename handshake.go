@@ -54,9 +54,9 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 }
 
 //go:linkname makeClientHello crypto/tls.(*Conn).makeClientHello
-func makeClientHello(c *trsconn) (*clientHelloMsg, *ecdh.PrivateKey, error)
+func makeClientHello(c *_trsconn) (*clientHelloMsg, *ecdh.PrivateKey, error)
 
-func (c *trsconn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
+func (c *_trsconn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
 	return makeClientHello(c)
 }
 
@@ -126,20 +126,20 @@ type sessionState struct {
 }
 
 //go:linkname loadSession crypto/tls.(*Conn).loadSession
-func loadSession(c *trsconn, hello *clientHelloMsg) (
+func loadSession(c *_trsconn, hello *clientHelloMsg) (
 	session *sessionState, earlySecret, binderKey []byte, err error,
 )
 
-func (c *trsconn) loadSession(hello *clientHelloMsg) (
+func (c *_trsconn) loadSession(hello *clientHelloMsg) (
 	session *sessionState, earlySecret, binderKey []byte, err error,
 ) {
 	return loadSession(c, hello)
 }
 
 //go:linkname clientSessionCacheKey crypto/tls.(*Conn).clientSessionCacheKey
-func clientSessionCacheKey(c *trsconn) string
+func clientSessionCacheKey(c *_trsconn) string
 
-func (c *trsconn) clientSessionCacheKey() string {
+func (c *_trsconn) clientSessionCacheKey() string {
 	return clientSessionCacheKey(c)
 }
 
@@ -177,12 +177,12 @@ func transcriptMsg(msg handshakeMessage, h transcriptHash) error
 const clientEarlyTrafficLabel = "c e traffic"
 
 //go:linkname quicSetWriteSecret crypto/tls.(*Conn).quicSetWriteSecret
-func quicSetWriteSecret(c *trsconn, level tls.QUICEncryptionLevel, suite uint16, secret []byte)
+func quicSetWriteSecret(c *_trsconn, level tls.QUICEncryptionLevel, suite uint16, secret []byte)
 
 //go:linkname readHandshake crypto/tls.(*Conn).readHandshake
-func readHandshake(c *trsconn, transcript transcriptHash) (any, error)
+func readHandshake(c *_trsconn, transcript transcriptHash) (any, error)
 
-func (c *trsconn) readHandshake(transcript transcriptHash) (any, error) {
+func (c *_trsconn) readHandshake(transcript transcriptHash) (any, error) {
 	return readHandshake(c, transcript)
 }
 
@@ -193,9 +193,9 @@ type serverHelloMsg struct {
 }
 
 //go:linkname sendAlert crypto/tls.(*Conn).sendAlert
-func sendAlert(c *trsconn, err alert) error
+func sendAlert(c *_trsconn, err alert) error
 
-func (c *trsconn) sendAlert(err alert) error {
+func (c *_trsconn) sendAlert(err alert) error {
 	return sendAlert(c, err)
 }
 
@@ -208,9 +208,9 @@ const (
 )
 
 //go:linkname pickTLSVersion crypto/tls.(*Conn).pickTLSVersion
-func pickTLSVersion(c *trsconn, serverHello *serverHelloMsg) error
+func pickTLSVersion(c *_trsconn, serverHello *serverHelloMsg) error
 
-func (c *trsconn) pickTLSVersion(serverHello *serverHelloMsg) error {
+func (c *_trsconn) pickTLSVersion(serverHello *serverHelloMsg) error {
 	return pickTLSVersion(c, serverHello)
 }
 
@@ -293,7 +293,7 @@ func (hs *clientHandshakeState) handshake() error {
 // writeHandshakeRecord writes a handshake message to the connection and updates
 // the record layer state. If transcript is non-nil the marshalled message is
 // written to it.
-func (c *trsconn) writeHandshakeRecord(msg handshakeMessage, transcript transcriptHash) (int, error) {
+func (c *_trsconn) writeHandshakeRecord(msg handshakeMessage, transcript transcriptHash) (int, error) {
 	c.out.Lock()
 	defer c.out.Unlock()
 
@@ -305,10 +305,12 @@ func (c *trsconn) writeHandshakeRecord(msg handshakeMessage, transcript transcri
 		transcript.Write(data)
 	}
 
-	return writeRecordLocked(c, recordTypeHandshake, data)
+	return c.writeRecordLocked(recordTypeHandshake, data)
 }
 
-func (c *trsconn) clientHandshake(ctx context.Context) (err error) {
+func (cout *trsconn) clientHandshake(ctx context.Context) (err error) {
+	c := (*_trsconn)(unsafe.Pointer(cout))
+
 	if c.config == nil {
 		c.config = defaultConfig()
 	}
@@ -390,7 +392,7 @@ func (c *trsconn) clientHandshake(ctx context.Context) (err error) {
 
 	if c.vers == tls.VersionTLS13 {
 		hs := &clientHandshakeStateTLS13{
-			c:           c,
+			c:           cout,
 			ctx:         ctx,
 			serverHello: serverHello,
 			hello:       hello,
@@ -405,7 +407,7 @@ func (c *trsconn) clientHandshake(ctx context.Context) (err error) {
 	}
 
 	hs := &clientHandshakeState{
-		c:           c,
+		c:           cout,
 		ctx:         ctx,
 		serverHello: serverHello,
 		hello:       hello,
