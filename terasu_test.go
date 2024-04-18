@@ -21,7 +21,7 @@ func TestHTTPDialTLS13(t *testing.T) {
 					ServerName:         "huggingface.co",
 					InsecureSkipVerify: true,
 				})
-				err = Use(tlsConn).Handshake()
+				err = Use(tlsConn).Handshake(4)
 				if err != nil {
 					_ = tlsConn.Close()
 					return nil, err
@@ -59,7 +59,7 @@ func TestHTTPDialTLS12(t *testing.T) {
 					InsecureSkipVerify: true,
 					MaxVersion:         tls.VersionTLS12,
 				})
-				err = Use(tlsConn).Handshake()
+				err = Use(tlsConn).Handshake(4)
 				if err != nil {
 					_ = tlsConn.Close()
 					return nil, err

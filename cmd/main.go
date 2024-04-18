@@ -1,47 +1,25 @@
 package main
 
 import (
-	"crypto/tls"
-	"flag"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+	"os"
 	"strings"
 
-	"github.com/fumiama/terasu"
+	"github.com/fumiama/terasu/http2"
 )
 
 func main() {
-	u := flag.String("url", "https://huggingface.co/", "the url to get")
-	ipport := flag.String("dest", "18.65.159.2:443", "host:port")
-	flag.Parse()
-	if !strings.HasPrefix(*u, "https://") {
+	if len(os.Args) != 2 {
+		fmt.Println("Usage:", os.Args[0], "url")
+		return
+	}
+	if !strings.HasPrefix(os.Args[1], "https://") {
 		fmt.Println("ERROR: invalid url")
 		return
 	}
-	host := (*u)[8:]
-	host, _, _ = strings.Cut(host, "/")
-	cli := http.Client{
-		Transport: &http.Transport{
-			DialTLS: func(network, addr string) (net.Conn, error) {
-				conn, err := net.Dial("tcp", *ipport)
-				if err != nil {
-					return nil, err
-				}
-				tlsConn := tls.Client(conn, &tls.Config{
-					ServerName: host,
-				})
-				err = terasu.Use(tlsConn).Handshake()
-				if err != nil {
-					_ = tlsConn.Close()
-					return nil, err
-				}
-				return tlsConn, nil
-			},
-		},
-	}
-	resp, err := cli.Get(*u)
+	resp, err := http2.Get(os.Args[1])
 	if err != nil {
 		fmt.Println("ERROR:", err)
 		return

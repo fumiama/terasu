@@ -13,8 +13,6 @@ import (
 	_ "unsafe"
 )
 
-const firstFragmentLen = 4
-
 type recordType uint8
 
 const (
@@ -193,7 +191,7 @@ func (c *_trsconn) sendAlertLocked(err alert) error {
 
 // writeRecordLocked writes a TLS record with the given type and payload to the
 // connection and updates the record layer state.
-func (c *_trsconn) writeRecordLocked(typ recordType, data []byte) (int, error) {
+func (c *_trsconn) writeRecordLocked(typ recordType, firstFragmentLen uint8, data []byte) (int, error) {
 	if c.quic != nil {
 		return tlsWriteRecordLocked(c, typ, data)
 	}
@@ -219,7 +217,7 @@ func (c *_trsconn) writeRecordLocked(typ recordType, data []byte) (int, error) {
 				m = maxPayload
 			}
 		} else {
-			m = firstFragmentLen
+			m = int(firstFragmentLen)
 		}
 
 		_, outBuf = sliceForAppend(outBuf[:0], recordHeaderLen)

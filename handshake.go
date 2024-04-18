@@ -293,7 +293,7 @@ func (hs *clientHandshakeState) handshake() error {
 // writeHandshakeRecord writes a handshake message to the connection and updates
 // the record layer state. If transcript is non-nil the marshalled message is
 // written to it.
-func (c *_trsconn) writeHandshakeRecord(msg handshakeMessage, transcript transcriptHash) (int, error) {
+func (c *_trsconn) writeHandshakeRecord(msg handshakeMessage, transcript transcriptHash, firstFragmentLen uint8) (int, error) {
 	c.out.Lock()
 	defer c.out.Unlock()
 
@@ -305,118 +305,120 @@ func (c *_trsconn) writeHandshakeRecord(msg handshakeMessage, transcript transcr
 		transcript.Write(data)
 	}
 
-	return c.writeRecordLocked(recordTypeHandshake, data)
+	return c.writeRecordLocked(recordTypeHandshake, firstFragmentLen, data)
 }
 
-func (cout *Conn) clientHandshake(ctx context.Context) (err error) {
-	c := (*_trsconn)(unsafe.Pointer(cout))
+func (cout *Conn) clientHandshake(firstFragmentLen uint8) func(context.Context) error {
+	return func(ctx context.Context) (err error) {
+		c := (*_trsconn)(unsafe.Pointer(cout))
 
-	if c.config == nil {
-		c.config = defaultConfig()
-	}
+		if c.config == nil {
+			c.config = defaultConfig()
+		}
 
-	// This may be a renegotiation handshake, in which case some fields
-	// need to be reset.
-	c.didResume = false
+		// This may be a renegotiation handshake, in which case some fields
+		// need to be reset.
+		c.didResume = false
 
-	hello, ecdheKey, err := c.makeClientHello()
-	if err != nil {
-		return err
-	}
-	c.serverName = hello.serverName
-
-	session, earlySecret, binderKey, err := c.loadSession(hello)
-	if err != nil {
-		return err
-	}
-	if session != nil {
-		defer func() {
-			// If we got a handshake failure when resuming a session, throw away
-			// the session ticket. See RFC 5077, Section 3.2.
-			//
-			// RFC 8446 makes no mention of dropping tickets on failure, but it
-			// does require servers to abort on invalid binders, so we need to
-			// delete tickets to recover from a corrupted PSK.
-			if err != nil {
-				if cacheKey := c.clientSessionCacheKey(); cacheKey != "" {
-					c.config.ClientSessionCache.Put(cacheKey, nil)
-				}
-			}
-		}()
-	}
-
-	if _, err := c.writeHandshakeRecord(hello, nil); err != nil {
-		return err
-	}
-
-	if hello.earlyData {
-		suite := cipherSuiteTLS13ByID(session.cipherSuite)
-		transcript := suite.hash.New()
-		if err := transcriptMsg(hello, transcript); err != nil {
+		hello, ecdheKey, err := c.makeClientHello()
+		if err != nil {
 			return err
 		}
-		earlyTrafficSecret := suite.deriveSecret(earlySecret, clientEarlyTrafficLabel, transcript)
-		quicSetWriteSecret(c, tls.QUICEncryptionLevelEarly, suite.id, earlyTrafficSecret)
-	}
+		c.serverName = hello.serverName
 
-	// serverHelloMsg is not included in the transcript
-	msg, err := c.readHandshake(nil)
-	if err != nil {
-		return err
-	}
+		session, earlySecret, binderKey, err := c.loadSession(hello)
+		if err != nil {
+			return err
+		}
+		if session != nil {
+			defer func() {
+				// If we got a handshake failure when resuming a session, throw away
+				// the session ticket. See RFC 5077, Section 3.2.
+				//
+				// RFC 8446 makes no mention of dropping tickets on failure, but it
+				// does require servers to abort on invalid binders, so we need to
+				// delete tickets to recover from a corrupted PSK.
+				if err != nil {
+					if cacheKey := c.clientSessionCacheKey(); cacheKey != "" {
+						c.config.ClientSessionCache.Put(cacheKey, nil)
+					}
+				}
+			}()
+		}
 
-	var serverHello *serverHelloMsg
-	if !isTypeEqual(msg, "*tls.serverHelloMsg") {
-		c.sendAlert(alertUnexpectedMessage)
-		return unexpectedMessageError(serverHello, msg)
-	}
-	serverHello = (*serverHelloMsg)(*(*unsafe.Pointer)(
-		unsafe.Add(unsafe.Pointer(&msg), unsafe.Sizeof(uintptr(0))),
-	))
+		if _, err := c.writeHandshakeRecord(hello, nil, firstFragmentLen); err != nil {
+			return err
+		}
 
-	if err := c.pickTLSVersion(serverHello); err != nil {
-		return err
-	}
+		if hello.earlyData {
+			suite := cipherSuiteTLS13ByID(session.cipherSuite)
+			transcript := suite.hash.New()
+			if err := transcriptMsg(hello, transcript); err != nil {
+				return err
+			}
+			earlyTrafficSecret := suite.deriveSecret(earlySecret, clientEarlyTrafficLabel, transcript)
+			quicSetWriteSecret(c, tls.QUICEncryptionLevelEarly, suite.id, earlyTrafficSecret)
+		}
 
-	// If we are negotiating a protocol version that's lower than what we
-	// support, check for the server downgrade canaries.
-	// See RFC 8446, Section 4.1.3.
-	maxVers := maxSupportedVersion(c.config, roleClient)
-	tls12Downgrade := string(serverHello.random[24:]) == downgradeCanaryTLS12
-	tls11Downgrade := string(serverHello.random[24:]) == downgradeCanaryTLS11
-	if maxVers == tls.VersionTLS13 && c.vers <= tls.VersionTLS12 && (tls12Downgrade || tls11Downgrade) ||
-		maxVers == tls.VersionTLS12 && c.vers <= tls.VersionTLS11 && tls11Downgrade {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: downgrade attempt detected, possibly due to a MitM attack or a broken middlebox")
-	}
+		// serverHelloMsg is not included in the transcript
+		msg, err := c.readHandshake(nil)
+		if err != nil {
+			return err
+		}
 
-	if c.vers == tls.VersionTLS13 {
-		hs := &clientHandshakeStateTLS13{
+		var serverHello *serverHelloMsg
+		if !isTypeEqual(msg, "*tls.serverHelloMsg") {
+			c.sendAlert(alertUnexpectedMessage)
+			return unexpectedMessageError(serverHello, msg)
+		}
+		serverHello = (*serverHelloMsg)(*(*unsafe.Pointer)(
+			unsafe.Add(unsafe.Pointer(&msg), unsafe.Sizeof(uintptr(0))),
+		))
+
+		if err := c.pickTLSVersion(serverHello); err != nil {
+			return err
+		}
+
+		// If we are negotiating a protocol version that's lower than what we
+		// support, check for the server downgrade canaries.
+		// See RFC 8446, Section 4.1.3.
+		maxVers := maxSupportedVersion(c.config, roleClient)
+		tls12Downgrade := string(serverHello.random[24:]) == downgradeCanaryTLS12
+		tls11Downgrade := string(serverHello.random[24:]) == downgradeCanaryTLS11
+		if maxVers == tls.VersionTLS13 && c.vers <= tls.VersionTLS12 && (tls12Downgrade || tls11Downgrade) ||
+			maxVers == tls.VersionTLS12 && c.vers <= tls.VersionTLS11 && tls11Downgrade {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: downgrade attempt detected, possibly due to a MitM attack or a broken middlebox")
+		}
+
+		if c.vers == tls.VersionTLS13 {
+			hs := &clientHandshakeStateTLS13{
+				c:           cout,
+				ctx:         ctx,
+				serverHello: serverHello,
+				hello:       hello,
+				ecdheKey:    ecdheKey,
+				session:     session,
+				earlySecret: earlySecret,
+				binderKey:   binderKey,
+			}
+
+			// In TLS 1.3, session tickets are delivered after the handshake.
+			return hs.handshake()
+		}
+
+		hs := &clientHandshakeState{
 			c:           cout,
 			ctx:         ctx,
 			serverHello: serverHello,
 			hello:       hello,
-			ecdheKey:    ecdheKey,
 			session:     session,
-			earlySecret: earlySecret,
-			binderKey:   binderKey,
 		}
 
-		// In TLS 1.3, session tickets are delivered after the handshake.
-		return hs.handshake()
-	}
+		if err := hs.handshake(); err != nil {
+			return err
+		}
 
-	hs := &clientHandshakeState{
-		c:           cout,
-		ctx:         ctx,
-		serverHello: serverHello,
-		hello:       hello,
-		session:     session,
+		return nil
 	}
-
-	if err := hs.handshake(); err != nil {
-		return err
-	}
-
-	return nil
 }
