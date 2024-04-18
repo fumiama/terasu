@@ -17,6 +17,7 @@ import (
 )
 
 var (
+	ErrNoTLSConnection  = errors.New("no tls connection")
 	ErrEmptyHostAddress = errors.New("empty host addr")
 )
 
@@ -74,6 +75,9 @@ var DefaultClient = http.Client{
 				}
 				_ = tlsConn.Close()
 				tlsConn = nil
+			}
+			if tlsConn == nil {
+				return nil, ErrNoTLSConnection
 			}
 			return tlsConn, err
 		},
