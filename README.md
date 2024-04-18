@@ -17,9 +17,9 @@ cli := http.Client{
     Transport: &http.Transport{
         DialTLS: func(network, addr string) (net.Conn, error) {
             host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
+            if err != nil {
+                return nil, err
+            }
             addrs, err := net.DefaultResolver.LookupHost(ctx, host)
             if err != nil {
                 return nil, err
