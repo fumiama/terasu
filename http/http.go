@@ -60,9 +60,10 @@ var DefaultClient = http.Client{
 			if len(addr) == 0 {
 				return nil, ErrEmptyHostAddress
 			}
+			var conn net.Conn
 			var tlsConn *tls.Conn
 			for _, a := range addrs {
-				conn, err := DefaultDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
+				conn, err = DefaultDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
 				if err != nil {
 					continue
 				}
@@ -75,9 +76,6 @@ var DefaultClient = http.Client{
 				}
 				_ = tlsConn.Close()
 				tlsConn = nil
-			}
-			if tlsConn == nil {
-				return nil, ErrNoTLSConnection
 			}
 			return tlsConn, err
 		},
