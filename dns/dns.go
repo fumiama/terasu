@@ -21,8 +21,8 @@ var DefaultDialer = net.Dialer{
 }
 
 type dnsstat struct {
-	A string
-	E bool
+	a string
+	e bool
 }
 
 type DNSList struct {
@@ -32,14 +32,14 @@ type DNSList struct {
 }
 
 type DNSConfig struct {
-	Servers   map[string][]string // Servers map[dot.com]ip:ports
-	Fallbacks map[string][]string // Fallbacks map[domain]ips
+	Servers   map[string][]string `yaml:"Servers"`   // Servers map[dot.com]ip:ports
+	Fallbacks map[string][]string `yaml:"Fallbacks"` // Fallbacks map[domain]ips
 }
 
 // hasrecord no lock, use under lock
 func hasrecord(lst []*dnsstat, a string) bool {
 	for _, addr := range lst {
-		if addr.A == a {
+		if addr.a == a {
 			return true
 		}
 	}
@@ -117,12 +117,12 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 	var conn net.Conn
 	for host, addrs := range ds.m {
 		for _, addr := range addrs {
-			if !addr.E {
+			if !addr.e {
 				continue
 			}
-			conn, err = dialer.DialContext(ctx, "tcp", addr.A)
+			conn, err = dialer.DialContext(ctx, "tcp", addr.a)
 			if err != nil {
-				addr.E = false // no need to acquire write lock
+				addr.e = false // no need to acquire write lock
 				continue
 			}
 			tlsConn = tls.Client(conn, &tls.Config{ServerName: host})
@@ -131,7 +131,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 				return
 			}
 			_ = tlsConn.Close()
-			addr.E = false // no need to acquire write lock
+			addr.e = false // no need to acquire write lock
 		}
 	}
 	return

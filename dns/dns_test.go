@@ -79,11 +79,11 @@ func (ds *DNSList) test() {
 	defer ds.RUnlock()
 	for host, addrs := range ds.m {
 		for _, addr := range addrs {
-			if !addr.E {
+			if !addr.e {
 				continue
 			}
-			fmt.Println("dial:", host, addr.A)
-			conn, err := net.Dial("tcp", addr.A)
+			fmt.Println("dial:", host, addr.a)
+			conn, err := net.Dial("tcp", addr.a)
 			if err != nil {
 				continue
 			}
@@ -91,10 +91,10 @@ func (ds *DNSList) test() {
 			err = terasu.Use(tlsConn).Handshake(4)
 			_ = tlsConn.Close()
 			if err == nil {
-				fmt.Println("succ:", host, addr.A)
+				fmt.Println("succ:", host, addr.a)
 				continue
 			}
-			fmt.Println("fail:", host, addr.A)
+			fmt.Println("fail:", host, addr.a)
 		}
 	}
 }
