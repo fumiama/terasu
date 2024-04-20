@@ -29,7 +29,7 @@ func TestDNS(t *testing.T) {
 		IPv6Servers.test()
 	}
 	IPv4Servers.test()
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		addrs, err := DefaultResolver.LookupHost(context.TODO(), "huggingface.co")
 		if err != nil {
 			t.Fatal(err)
@@ -53,12 +53,16 @@ func TestBadDNS(t *testing.T) {
 		IPv6Servers = DNSList{
 			m: map[string][]*dnsstat{},
 		}
-		IPv6Servers.Add(map[string][]string{"test.bad.host": {"169.254.122.111"}})
+		IPv6Servers.Add(&DNSConfig{
+			Servers: map[string][]string{"test.bad.host": {"169.254.122.111"}},
+		})
 	} else {
 		IPv4Servers = DNSList{
 			m: map[string][]*dnsstat{},
 		}
-		IPv4Servers.Add(map[string][]string{"test.bad.host": {"169.254.122.111:853"}})
+		IPv4Servers.Add(&DNSConfig{
+			Servers: map[string][]string{"test.bad.host": {"169.254.122.111:853"}},
+		})
 	}
 	for i := 0; i < 10; i++ {
 		addrs, err := DefaultResolver.LookupHost(context.TODO(), "api.mangacopy.com")

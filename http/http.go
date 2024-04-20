@@ -14,6 +14,7 @@ import (
 
 	"github.com/fumiama/terasu"
 	"github.com/fumiama/terasu/dns"
+	"github.com/fumiama/terasu/ip"
 )
 
 var (
@@ -50,7 +51,11 @@ var DefaultClient = http.Client{
 			if len(addrs) == 0 {
 				addrs, err = dns.DefaultResolver.LookupHost(ctx, host)
 				if err != nil {
-					addrs, err = net.DefaultResolver.LookupHost(ctx, host)
+					if ip.IsIPv6Available.Get() {
+						addrs, err = dns.IPv6Servers.LookupHostFallback(ctx, host)
+					} else {
+						addrs, err = dns.IPv4Servers.LookupHostFallback(ctx, host)
+					}
 					if err != nil {
 						return nil, err
 					}

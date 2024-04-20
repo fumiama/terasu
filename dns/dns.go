@@ -28,6 +28,12 @@ type dnsstat struct {
 type DNSList struct {
 	sync.RWMutex
 	m map[string][]*dnsstat
+	b map[string][]string
+}
+
+type DNSConfig struct {
+	Servers   map[string][]string // Servers map[dot.com]ip:ports
+	Fallbacks map[string][]string // Fallbacks map[domain]ips
 }
 
 // hasrecord no lock, use under lock
@@ -40,11 +46,21 @@ func hasrecord(lst []*dnsstat, a string) bool {
 	return false
 }
 
-func (ds *DNSList) Add(m map[string][]string) {
+// hasrecord no lock, use under lock
+func hasfallback(lst []string, a string) bool {
+	for _, addr := range lst {
+		if addr == a {
+			return true
+		}
+	}
+	return false
+}
+
+func (ds *DNSList) Add(c *DNSConfig) {
 	ds.Lock()
 	defer ds.Unlock()
 	addList := map[string][]*dnsstat{}
-	for host, addrs := range m {
+	for host, addrs := range c.Servers {
 		for _, addr := range addrs {
 			if !hasrecord(ds.m[host], addr) && !hasrecord(addList[host], addr) {
 				addList[host] = append(addList[host], &dnsstat{addr, true})
@@ -54,6 +70,26 @@ func (ds *DNSList) Add(m map[string][]string) {
 	for host, addrs := range addList {
 		ds.m[host] = append(ds.m[host], addrs...)
 	}
+	addListFallback := map[string][]string{}
+	for host, addrs := range c.Fallbacks {
+		for _, addr := range addrs {
+			if !hasfallback(ds.b[host], addr) && !hasfallback(addListFallback[host], addr) {
+				addListFallback[host] = append(addListFallback[host], addr)
+			}
+		}
+	}
+	for host, addrs := range addListFallback {
+		ds.b[host] = append(ds.b[host], addrs...)
+	}
+}
+
+func (ds *DNSList) LookupHostFallback(ctx context.Context, host string) ([]string, error) {
+	ds.RLock()
+	defer ds.RUnlock()
+	if addrs, ok := ds.b[host]; ok {
+		return addrs, nil
+	}
+	return net.DefaultResolver.LookupHost(ctx, host)
 }
 
 func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFragmentLen uint8) (tlsConn *tls.Conn, err error) {
@@ -124,6 +160,7 @@ var IPv6Servers = DNSList{
 			{"[2620:fe::fe:10]:853", true},
 		},
 	},
+	b: map[string][]string{},
 }
 
 var IPv4Servers = DNSList{
@@ -149,6 +186,7 @@ var IPv4Servers = DNSList{
 			{"149.112.112.10:853", true},
 		},
 	},
+	b: map[string][]string{},
 }
 
 var DefaultResolver = &net.Resolver{
