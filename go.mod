@@ -1,6 +1,6 @@
 module github.com/fumiama/terasu
 
-go 1.22.1
+go 1.20
 
 require (
 	github.com/FloatTech/ttl v0.0.0-20230307105452-d6f7b2b647d1
