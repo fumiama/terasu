@@ -1,4 +1,4 @@
-//go:build go1.21
+//go:build !go1.21
 
 package terasu
 
@@ -53,8 +53,7 @@ type halfConn struct {
 	nextCipher any       // next encryption state
 	nextMac    hash.Hash // next MAC algorithm
 
-	level         tls.QUICEncryptionLevel // current QUIC encryption level
-	trafficSecret []byte                  // current TLS 1.3 traffic secret
+	trafficSecret []byte // current TLS 1.3 traffic secret
 }
 
 type Conn tls.Conn
@@ -66,7 +65,6 @@ type _trsconn struct {
 	conn        net.Conn
 	isClient    bool
 	handshakeFn func(context.Context) error // (*Conn).clientHandshake or serverHandshake
-	quic        *uintptr                    // nil for non-QUIC connections
 
 	// isHandshakeComplete is true if the connection is currently transferring
 	// application data (i.e. is not currently processing a handshake).
@@ -82,7 +80,6 @@ type _trsconn struct {
 	// connection so far. If renegotiation is disabled then this is either
 	// zero or one.
 	handshakes       int
-	extMasterSecret  bool
 	didResume        bool // whether this connection was a session resumption
 	cipherSuite      uint16
 	ocspResponse     []byte   // stapled OCSP response
@@ -140,9 +137,6 @@ type _trsconn struct {
 //go:linkname outBufPool crypto/tls.outBufPool
 var outBufPool sync.Pool
 
-//go:linkname tlsWriteRecordLocked crypto/tls.(*Conn).writeRecordLocked
-func tlsWriteRecordLocked(c *_trsconn, typ recordType, data []byte) (int, error)
-
 //go:linkname maxPayloadSizeForWrite crypto/tls.(*Conn).maxPayloadSizeForWrite
 func maxPayloadSizeForWrite(c *_trsconn, typ recordType) int
 
@@ -194,10 +188,6 @@ func (c *_trsconn) sendAlertLocked(err alert) error {
 // writeRecordLocked writes a TLS record with the given type and payload to the
 // connection and updates the record layer state.
 func (c *_trsconn) writeRecordLocked(typ recordType, firstFragmentLen uint8, data []byte) (int, error) {
-	if c.quic != nil {
-		return tlsWriteRecordLocked(c, typ, data)
-	}
-
 	outBufPtr := outBufPool.Get().(*[]byte)
 	outBuf := *outBufPtr
 	defer func() {
