@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -86,6 +87,22 @@ func (ds *DNSList) Add(c *DNSConfig) {
 func (ds *DNSList) LookupHostFallback(ctx context.Context, host string) ([]string, error) {
 	ds.RLock()
 	defer ds.RUnlock()
+	// try to use DoH first
+	for _, addrs := range ds.m {
+		for _, addr := range addrs {
+			if !addr.e || !strings.HasPrefix(addr.a, "https://") { // disabled or is not DoH
+				continue
+			}
+			jr, err := lookupdoh(addr.a, host)
+			if err == nil {
+				hosts := jr.hosts()
+				if len(hosts) > 0 {
+					return hosts, nil
+				}
+			}
+			addr.e = false // no need to acquire write lock
+		}
+	}
 	if addrs, ok := ds.b[host]; ok {
 		return addrs, nil
 	}
@@ -117,7 +134,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 	var conn net.Conn
 	for host, addrs := range ds.m {
 		for _, addr := range addrs {
-			if !addr.e {
+			if !addr.e || strings.HasPrefix(addr.a, "https://") { // disabled or is DoH
 				continue
 			}
 			conn, err = dialer.DialContext(ctx, "tcp", addr.a)
@@ -142,14 +159,21 @@ var IPv6Servers = DNSList{
 		"dot.sb": {
 			{"[2a09::]:853", true},
 			{"[2a11::]:853", true},
+			{"https://doh.sb/dns-query", true},
 		},
 		"dns.google": {
 			{"[2001:4860:4860::8888]:853", true},
 			{"[2001:4860:4860::8844]:853", true},
+			{"https://dns.google/resolve", true},
+			{"https://[2001:4860:4860::8888]/resolve", true},
+			{"https://[2001:4860:4860::8844]/resolve", true},
 		},
 		"cloudflare-dns.com": {
 			{"[2606:4700:4700::1111]:853", true},
 			{"[2606:4700:4700::1001]:853", true},
+			{"https://cloudflare-dns.com/dns-query", true},
+			{"https://[2606:4700:4700::1111]/dns-query", true},
+			{"https://[2606:4700:4700::1001]/dns-query", true},
 		},
 		"dns.opendns.com": {
 			{"[2620:119:35::35]:853", true},
@@ -168,14 +192,21 @@ var IPv4Servers = DNSList{
 		"dot.sb": {
 			{"185.222.222.222:853", true},
 			{"45.11.45.11:853", true},
+			{"https://doh.sb/dns-query", true},
 		},
 		"dns.google": {
 			{"8.8.8.8:853", true},
 			{"8.8.4.4:853", true},
+			{"https://dns.google/resolve", true},
+			{"https://8.8.8.8/resolve", true},
+			{"https://8.8.4.4/resolve", true},
 		},
 		"cloudflare-dns.com": {
 			{"1.1.1.1:853", true},
 			{"1.0.0.1:853", true},
+			{"https://cloudflare-dns.com/dns-query", true},
+			{"https://1.1.1.1/dns-query", true},
+			{"https://1.0.0.1/dns-query", true},
 		},
 		"dns.opendns.com": {
 			{"208.67.222.222:853", true},

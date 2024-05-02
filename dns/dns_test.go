@@ -24,6 +24,29 @@ func TestResolver(t *testing.T) {
 	}
 }
 
+func TestResolverFallback(t *testing.T) {
+	t.Log("IsIPv6Available:", ip.IsIPv6Available.Get())
+
+	if ip.IsIPv6Available.Get() {
+		addrs, err := IPv6Servers.LookupHostFallback(context.TODO(), "huggingface.co")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Log(addrs)
+		if len(addrs) == 0 {
+			t.Fail()
+		}
+	}
+	addrs, err := IPv4Servers.LookupHostFallback(context.TODO(), "huggingface.co")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(addrs)
+	if len(addrs) == 0 {
+		t.Fail()
+	}
+}
+
 func TestDNS(t *testing.T) {
 	if ip.IsIPv6Available.Get() {
 		IPv6Servers.test()

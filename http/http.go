@@ -22,8 +22,12 @@ var (
 	ErrEmptyHostAddress = errors.New("empty host addr")
 )
 
-var DefaultDialer = net.Dialer{
+var defaultDialer = net.Dialer{
 	Timeout: time.Minute,
+}
+
+func SetDefaultClientTimeout(t time.Duration) {
+	defaultDialer.Timeout = t
 }
 
 var lookupTable = ttl.NewCache[string, []string](time.Hour)
@@ -31,15 +35,15 @@ var lookupTable = ttl.NewCache[string, []string](time.Hour)
 var DefaultClient = http.Client{
 	Transport: &http.Transport{
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if DefaultDialer.Timeout != 0 {
+			if defaultDialer.Timeout != 0 {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, DefaultDialer.Timeout)
+				ctx, cancel = context.WithTimeout(ctx, defaultDialer.Timeout)
 				defer cancel()
 			}
 
-			if !DefaultDialer.Deadline.IsZero() {
+			if !defaultDialer.Deadline.IsZero() {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithDeadline(ctx, DefaultDialer.Deadline)
+				ctx, cancel = context.WithDeadline(ctx, defaultDialer.Deadline)
 				defer cancel()
 			}
 
@@ -68,7 +72,7 @@ var DefaultClient = http.Client{
 			var conn net.Conn
 			var tlsConn *tls.Conn
 			for _, a := range addrs {
-				conn, err = DefaultDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
+				conn, err = defaultDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
 				if err != nil {
 					continue
 				}
@@ -76,6 +80,19 @@ var DefaultClient = http.Client{
 					ServerName: host,
 				})
 				err = terasu.Use(tlsConn).HandshakeContext(ctx, terasu.DefaultFirstFragmentLen)
+				if err == nil {
+					break
+				}
+				_ = tlsConn.Close()
+				tlsConn = nil
+				conn, err = defaultDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
+				if err != nil {
+					continue
+				}
+				tlsConn = tls.Client(conn, &tls.Config{
+					ServerName: host,
+				})
+				err = tlsConn.HandshakeContext(ctx)
 				if err == nil {
 					break
 				}
