@@ -65,10 +65,6 @@ func (jr *dohjsonresponse) hosts() []string {
 	return hosts
 }
 
-var defaultDialer = net.Dialer{
-	Timeout: time.Second * 4,
-}
-
 var lookupTable = ttl.NewCache[string, []string](time.Hour)
 
 var trsHTTP2ClientWithSystemDNS = http.Client{

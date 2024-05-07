@@ -17,8 +17,12 @@ var (
 	ErrNoDNSAvailable = errors.New("no dns available")
 )
 
-var DefaultDialer = net.Dialer{
-	Timeout: time.Second * 8,
+var defaultDialer = net.Dialer{
+	Timeout: time.Second * 4,
+}
+
+func SetTimeout(t time.Duration) {
+	defaultDialer.Timeout = t
 }
 
 type dnsstat struct {
@@ -113,7 +117,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 	err = ErrNoDNSAvailable
 
 	if dialer == nil {
-		dialer = &DefaultDialer
+		dialer = &defaultDialer
 	}
 
 	ds.RLock()
