@@ -34,6 +34,7 @@ var lookupTable = ttl.NewCache[string, []string](time.Hour)
 
 var DefaultClient = http.Client{
 	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			if defaultDialer.Timeout != 0 {
 				var cancel context.CancelFunc
@@ -101,6 +102,11 @@ var DefaultClient = http.Client{
 			}
 			return tlsConn, err
 		},
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
 	},
 }
 
