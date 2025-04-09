@@ -1,3 +1,5 @@
+<img height="400" align="right" src="https://github.com/user-attachments/assets/5d038fd3-0db0-489a-bd2d-f50591d34660">
+
 <div align="center">
 
 # TeRaSu (TRS)
