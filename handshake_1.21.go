@@ -1,15 +1,14 @@
-//go:build !go1.21
+//go:build go1.21 && !go1.24
 
 package terasu
 
 import (
 	"context"
+	"crypto"
 	"crypto/ecdh"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"hash"
-	"time"
 	"unsafe"
 )
 
@@ -17,13 +16,29 @@ import (
 func defaultConfig() *tls.Config
 
 type clientHelloMsg struct {
-	raw                []byte
-	vers               uint16
-	random             []byte
-	sessionId          []byte
-	cipherSuites       []uint16
-	compressionMethods []uint8
-	serverName         string
+	raw                              []byte
+	vers                             uint16
+	random                           []byte
+	sessionId                        []byte
+	cipherSuites                     []uint16
+	compressionMethods               []uint8
+	serverName                       string
+	ocspStapling                     bool
+	supportedCurves                  []tls.CurveID
+	supportedPoints                  []uint8
+	ticketSupported                  bool
+	sessionTicket                    []uint8
+	supportedSignatureAlgorithms     []tls.SignatureScheme
+	supportedSignatureAlgorithmsCert []tls.SignatureScheme
+	secureRenegotiationSupported     bool
+	secureRenegotiation              []byte
+	extendedMasterSecret             bool
+	alpnProtocols                    []string
+	scts                             bool
+	supportedVersions                []uint16
+	cookie                           []byte
+	keyShares                        []byte
+	earlyData                        bool
 }
 
 //go:linkname marshal crypto/tls.(*clientHelloMsg).marshal
@@ -47,35 +62,107 @@ func (c *_trsconn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) 
 	return makeClientHello(c)
 }
 
-// ClientSessionState contains the state needed by clients to resume TLS
-// sessions.
+// A sessionState is a resumable session.
 type sessionState struct {
-	sessionTicket      []uint8               // Encrypted ticket used for session resumption with server
-	vers               uint16                // TLS version negotiated for the session
-	cipherSuite        uint16                // Ciphersuite negotiated for the session
-	masterSecret       []byte                // Full handshake MasterSecret, or TLS 1.3 resumption_master_secret
-	serverCertificates []*x509.Certificate   // Certificate chain presented by the server
-	verifiedChains     [][]*x509.Certificate // Certificate chains we built for verification
-	receivedAt         time.Time             // When the session ticket was received from the server
-	ocspResponse       []byte                // Stapled OCSP response presented by the server
-	scts               [][]byte              // SCTs presented by the server
+	// Encoded as a SessionState (in the language of RFC 8446, Section 3).
+	//
+	//   enum { server(1), client(2) } SessionStateType;
+	//
+	//   opaque Certificate<1..2^24-1>;
+	//
+	//   Certificate CertificateChain<0..2^24-1>;
+	//
+	//   opaque Extra<0..2^24-1>;
+	//
+	//   struct {
+	//       uint16 version;
+	//       SessionStateType type;
+	//       uint16 cipher_suite;
+	//       uint64 created_at;
+	//       opaque secret<1..2^8-1>;
+	//       Extra extra<0..2^24-1>;
+	//       uint8 ext_master_secret = { 0, 1 };
+	//       uint8 early_data = { 0, 1 };
+	//       CertificateEntry certificate_list<0..2^24-1>;
+	//       CertificateChain verified_chains<0..2^24-1>; /* excluding leaf */
+	//       select (SessionState.early_data) {
+	//           case 0: Empty;
+	//           case 1: opaque alpn<1..2^8-1>;
+	//       };
+	//       select (SessionState.type) {
+	//           case server: Empty;
+	//           case client: struct {
+	//               select (SessionState.version) {
+	//                   case VersionTLS10..VersionTLS12: Empty;
+	//                   case VersionTLS13: struct {
+	//                       uint64 use_by;
+	//                       uint32 age_add;
+	//                   };
+	//               };
+	//           };
+	//       };
+	//   } SessionState;
+	//
 
-	// TLS 1.3 fields.
-	nonce  []byte    // Ticket nonce sent by the server, to derive PSK
-	useBy  time.Time // Expiration of the ticket lifetime as set by the server
-	ageAdd uint32    // Random obfuscation factor for sending the ticket age
+	// Extra is ignored by crypto/tls, but is encoded by [SessionState.Bytes]
+	// and parsed by [ParseSessionState].
+	//
+	// This allows [Config.UnwrapSession]/[Config.WrapSession] and
+	// [ClientSessionCache] implementations to store and retrieve additional
+	// data alongside this session.
+	//
+	// To allow different layers in a protocol stack to share this field,
+	// applications must only append to it, not replace it, and must use entries
+	// that can be recognized even if out of order (for example, by starting
+	// with an id and version prefix).
+	Extra [][]byte
+
+	// EarlyData indicates whether the ticket can be used for 0-RTT in a QUIC
+	// connection. The application may set this to false if it is true to
+	// decline to offer 0-RTT even if supported.
+	EarlyData bool
+
+	version     uint16
+	isClient    bool
+	cipherSuite uint16
 }
 
 //go:linkname loadSession crypto/tls.(*Conn).loadSession
-func loadSession(c *_trsconn, hello *clientHelloMsg) (cacheKey string,
+func loadSession(c *_trsconn, hello *clientHelloMsg) (
 	session *sessionState, earlySecret, binderKey []byte, err error,
 )
 
-func (c *_trsconn) loadSession(hello *clientHelloMsg) (cacheKey string,
+func (c *_trsconn) loadSession(hello *clientHelloMsg) (
 	session *sessionState, earlySecret, binderKey []byte, err error,
 ) {
 	return loadSession(c, hello)
 }
+
+//go:linkname clientSessionCacheKey crypto/tls.(*Conn).clientSessionCacheKey
+func clientSessionCacheKey(c *_trsconn) string
+
+func (c *_trsconn) clientSessionCacheKey() string {
+	return clientSessionCacheKey(c)
+}
+
+// A cipherSuiteTLS13 defines only the pair of the AEAD algorithm and hash
+// algorithm to be used with HKDF. See RFC 8446, Appendix B.4.
+type cipherSuiteTLS13 struct {
+	id     uint16
+	keyLen int
+	aead   func(key, fixedNonce []byte) any
+	hash   crypto.Hash
+}
+
+//go:linkname deriveSecret crypto/tls.(*cipherSuiteTLS13).deriveSecret
+func deriveSecret(c *cipherSuiteTLS13, secret []byte, label string, transcript hash.Hash) []byte
+
+func (c *cipherSuiteTLS13) deriveSecret(secret []byte, label string, transcript hash.Hash) []byte {
+	return deriveSecret(c, secret, label, transcript)
+}
+
+//go:linkname cipherSuiteTLS13ByID crypto/tls.cipherSuiteTLS13ByID
+func cipherSuiteTLS13ByID(id uint16) *cipherSuiteTLS13
 
 type handshakeMessage interface {
 	marshal() ([]byte, error)
@@ -88,6 +175,11 @@ type transcriptHash interface {
 
 //go:linkname transcriptMsg crypto/tls.transcriptMsg
 func transcriptMsg(msg handshakeMessage, h transcriptHash) error
+
+const clientEarlyTrafficLabel = "c e traffic"
+
+//go:linkname quicSetWriteSecret crypto/tls.(*Conn).quicSetWriteSecret
+func quicSetWriteSecret(c *_trsconn, level tls.QUICEncryptionLevel, suite uint16, secret []byte)
 
 //go:linkname readHandshake crypto/tls.(*Conn).readHandshake
 func readHandshake(c *_trsconn, transcript transcriptHash) (any, error)
@@ -151,7 +243,7 @@ type clientHandshakeStateTLS13 struct {
 	certReq       unsafe.Pointer
 	usingPSK      bool
 	sentDummyCCS  bool
-	suite         unsafe.Pointer
+	suite         *cipherSuiteTLS13
 	transcript    hash.Hash
 	masterSecret  []byte
 	trafficSecret []byte // client_application_traffic_secret_0
@@ -236,11 +328,11 @@ func (cout *Conn) clientHandshake(firstFragmentLen uint8) func(context.Context) 
 		}
 		c.serverName = hello.serverName
 
-		cacheKey, session, earlySecret, binderKey, err := c.loadSession(hello)
+		session, earlySecret, binderKey, err := c.loadSession(hello)
 		if err != nil {
 			return err
 		}
-		if cacheKey != "" && session != nil {
+		if session != nil {
 			defer func() {
 				// If we got a handshake failure when resuming a session, throw away
 				// the session ticket. See RFC 5077, Section 3.2.
@@ -249,13 +341,25 @@ func (cout *Conn) clientHandshake(firstFragmentLen uint8) func(context.Context) 
 				// does require servers to abort on invalid binders, so we need to
 				// delete tickets to recover from a corrupted PSK.
 				if err != nil {
-					c.config.ClientSessionCache.Put(cacheKey, nil)
+					if cacheKey := c.clientSessionCacheKey(); cacheKey != "" {
+						c.config.ClientSessionCache.Put(cacheKey, nil)
+					}
 				}
 			}()
 		}
 
 		if _, err := c.writeHandshakeRecord(hello, nil, firstFragmentLen); err != nil {
 			return err
+		}
+
+		if hello.earlyData {
+			suite := cipherSuiteTLS13ByID(session.cipherSuite)
+			transcript := suite.hash.New()
+			if err := transcriptMsg(hello, transcript); err != nil {
+				return err
+			}
+			earlyTrafficSecret := suite.deriveSecret(earlySecret, clientEarlyTrafficLabel, transcript)
+			quicSetWriteSecret(c, tls.QUICEncryptionLevelEarly, suite.id, earlyTrafficSecret)
 		}
 
 		// serverHelloMsg is not included in the transcript
@@ -315,12 +419,6 @@ func (cout *Conn) clientHandshake(firstFragmentLen uint8) func(context.Context) 
 
 		if err := hs.handshake(); err != nil {
 			return err
-		}
-
-		// If we had a successful handshake and hs.session is different from
-		// the one already cached - cache a new one.
-		if cacheKey != "" && hs.session != nil && session != hs.session {
-			c.config.ClientSessionCache.Put(cacheKey, (*tls.ClientSessionState)(unsafe.Pointer(hs.session)))
 		}
 
 		return nil

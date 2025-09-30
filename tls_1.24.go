@@ -1,4 +1,4 @@
-//go:build go1.21 && !go1.23
+//go:build go1.24
 
 package terasu
 
@@ -29,6 +29,9 @@ const (
 )
 
 type alert uint8
+
+//go:linkname tlsConfigRand crypto/tls.(*Config).rand
+func tlsConfigRand(c *tls.Config) io.Reader
 
 //go:linkname alertError tls.(tls.alert).Error
 func alertError(e alert) string
@@ -84,7 +87,9 @@ type _trsconn struct {
 	handshakes       int
 	extMasterSecret  bool
 	didResume        bool // whether this connection was a session resumption
+	didHRR           bool // whether a HelloRetryRequest was sent/received
 	cipherSuite      uint16
+	curveID          tls.CurveID
 	ocspResponse     []byte   // stapled OCSP response
 	scts             [][]byte // signed certificate timestamps from server
 	peerCertificates []*x509.Certificate
@@ -105,6 +110,7 @@ type _trsconn struct {
 	// resumptionSecret is the resumption_master_secret for handling
 	// or sending NewSessionTicket messages.
 	resumptionSecret []byte
+	echAccepted      bool
 
 	// ticketKeys is the set of active session ticket keys for this
 	// connection. The first one is used to encrypt new tickets and

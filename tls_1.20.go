@@ -87,7 +87,7 @@ type _trsconn struct {
 	peerCertificates []*x509.Certificate
 	// activeCertHandles contains the cache handles to certificates in
 	// peerCertificates that are used to track active references.
-	activeCertHandles []*uintptr
+	activeCertHandles []unsafe.Pointer
 	// verifiedChains contains the certificate chains that we built, as
 	// opposed to the ones presented by the server.
 	verifiedChains [][]*x509.Certificate

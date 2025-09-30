@@ -1,4 +1,4 @@
-//go:build go1.23
+//go:build go1.23 && !go1.24
 
 package terasu
 
@@ -66,7 +66,7 @@ type _trsconn struct {
 	conn        net.Conn
 	isClient    bool
 	handshakeFn func(context.Context) error // (*Conn).clientHandshake or serverHandshake
-	quic        *uintptr                    // nil for non-QUIC connections
+	quic        unsafe.Pointer              // nil for non-QUIC connections
 
 	// isHandshakeComplete is true if the connection is currently transferring
 	// application data (i.e. is not currently processing a handshake).
@@ -92,7 +92,7 @@ type _trsconn struct {
 	peerCertificates []*x509.Certificate
 	// activeCertHandles contains the cache handles to certificates in
 	// peerCertificates that are used to track active references.
-	activeCertHandles []*uintptr
+	activeCertHandles []unsafe.Pointer
 	// verifiedChains contains the certificate chains that we built, as
 	// opposed to the ones presented by the server.
 	verifiedChains [][]*x509.Certificate

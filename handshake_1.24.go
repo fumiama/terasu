@@ -1,22 +1,33 @@
-//go:build go1.21
+//go:build go1.24
 
 package terasu
 
 import (
 	"context"
 	"crypto"
+	"crypto/cipher"
 	"crypto/ecdh"
+	"crypto/mlkem"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"hash"
+	"io"
 	"unsafe"
 )
 
 //go:linkname defaultConfig crypto/tls.defaultConfig
 func defaultConfig() *tls.Config
 
+// TLS 1.3 PSK Identity. Can be a Session Ticket, or a reference to a saved
+// session. See RFC 8446, Section 4.2.11.
+type pskIdentity struct {
+	label               []byte
+	obfuscatedTicketAge uint32
+}
+
 type clientHelloMsg struct {
-	raw                              []byte
+	original                         []byte
 	vers                             uint16
 	random                           []byte
 	sessionId                        []byte
@@ -39,6 +50,13 @@ type clientHelloMsg struct {
 	cookie                           []byte
 	keyShares                        []byte
 	earlyData                        bool
+	pskModes                         []uint8
+	pskIdentities                    []pskIdentity
+	pskBinders                       [][]byte
+	quicTransportParameters          []byte
+	encryptedClientHello             []byte
+	// extensions are only populated on the server-side of a handshake
+	extensions []uint16
 }
 
 //go:linkname marshal crypto/tls.(*clientHelloMsg).marshal
@@ -55,11 +73,91 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 	return unmarshal(m, data)
 }
 
-//go:linkname makeClientHello crypto/tls.(*Conn).makeClientHello
-func makeClientHello(c *_trsconn) (*clientHelloMsg, *ecdh.PrivateKey, error)
+//go:linkname clone crypto/tls.(*clientHelloMsg).clone
+func clone(m *clientHelloMsg) *clientHelloMsg
 
-func (c *_trsconn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
+func (m *clientHelloMsg) clone() *clientHelloMsg {
+	return clone(m)
+}
+
+type keySharePrivateKeys struct {
+	curveID tls.CurveID
+	ecdhe   *ecdh.PrivateKey
+	mlkem   *mlkem.DecapsulationKey768
+}
+
+type echCipher struct {
+	KDFID  uint16
+	AEADID uint16
+}
+
+type echExtension struct {
+	Type uint16
+	Data []byte
+}
+
+type echConfig struct {
+	raw []byte
+
+	Version uint16
+	Length  uint16
+
+	ConfigID             uint8
+	KemID                uint16
+	PublicKey            []byte
+	SymmetricCipherSuite []echCipher
+
+	MaxNameLength uint8
+	PublicName    []byte
+	Extensions    []echExtension
+}
+
+type uint128 struct {
+	hi, lo uint64
+}
+
+type hpkecontext struct {
+	aead cipher.AEAD
+
+	sharedSecret []byte
+
+	suiteID []byte
+
+	key            []byte
+	baseNonce      []byte
+	exporterSecret []byte
+
+	seqNum uint128
+}
+
+type hpkeSender struct {
+	*hpkecontext
+}
+
+type echClientContext struct {
+	config          *echConfig
+	hpkeContext     *hpkeSender
+	encapsulatedKey []byte
+	innerHello      *clientHelloMsg
+	innerTranscript hash.Hash
+	kdfID           uint16
+	aeadID          uint16
+	echRejected     bool
+	retryConfigs    []byte
+}
+
+//go:linkname makeClientHello crypto/tls.(*Conn).makeClientHello
+func makeClientHello(c *_trsconn) (*clientHelloMsg, *keySharePrivateKeys, *echClientContext, error)
+
+func (c *_trsconn) makeClientHello() (*clientHelloMsg, *keySharePrivateKeys, *echClientContext, error) {
 	return makeClientHello(c)
+}
+
+// activeCert is a handle to a certificate held in the cache. Once there are
+// no alive activeCerts for a given certificate, the certificate is removed
+// from the cache by a finalizer.
+type activeCert struct {
+	cert *x509.Certificate
 }
 
 // A sessionState is a resumable session.
@@ -125,15 +223,40 @@ type sessionState struct {
 	version     uint16
 	isClient    bool
 	cipherSuite uint16
+	// createdAt is the generation time of the secret on the sever (which for
+	// TLS 1.0–1.2 might be earlier than the current session) and the time at
+	// which the ticket was received on the client.
+	createdAt         uint64 // seconds since UNIX epoch
+	secret            []byte // master secret for TLS 1.2, or the PSK for TLS 1.3
+	extMasterSecret   bool
+	peerCertificates  []*x509.Certificate
+	activeCertHandles []*activeCert
+	ocspResponse      []byte
+	scts              [][]byte
+	verifiedChains    [][]*x509.Certificate
+	alpnProtocol      string // only set if EarlyData is true
+
+	// Client-side TLS 1.3-only fields.
+	useBy  uint64 // seconds since UNIX epoch
+	ageAdd uint32
+	ticket []byte
 }
+
+type earlySecret struct {
+	secret []byte
+	hash   func() any
+}
+
+//go:linkname clientEarlyTrafficSecret crypto/internal/fips140/tls13.(*EarlySecret).ClientEarlyTrafficSecret
+func clientEarlyTrafficSecret(s *earlySecret, transcript any) []byte
 
 //go:linkname loadSession crypto/tls.(*Conn).loadSession
 func loadSession(c *_trsconn, hello *clientHelloMsg) (
-	session *sessionState, earlySecret, binderKey []byte, err error,
+	session *sessionState, earlySecret *earlySecret, binderKey []byte, err error,
 )
 
 func (c *_trsconn) loadSession(hello *clientHelloMsg) (
-	session *sessionState, earlySecret, binderKey []byte, err error,
+	session *sessionState, earlySecret *earlySecret, binderKey []byte, err error,
 ) {
 	return loadSession(c, hello)
 }
@@ -188,10 +311,37 @@ func (c *_trsconn) readHandshake(transcript transcriptHash) (any, error) {
 	return readHandshake(c, transcript)
 }
 
+// TLS 1.3 Key Share. See RFC 8446, Section 4.2.8.
+type keyShare struct {
+	group tls.CurveID
+	data  []byte
+}
+
 type serverHelloMsg struct {
-	raw    []byte
-	vers   uint16
-	random []byte
+	original                     []byte
+	vers                         uint16
+	random                       []byte
+	sessionId                    []byte
+	cipherSuite                  uint16
+	compressionMethod            uint8
+	ocspStapling                 bool
+	ticketSupported              bool
+	secureRenegotiationSupported bool
+	secureRenegotiation          []byte
+	extendedMasterSecret         bool
+	alpnProtocol                 string
+	scts                         [][]byte
+	supportedVersion             uint16
+	serverShare                  keyShare
+	selectedIdentityPresent      bool
+	selectedIdentity             uint16
+	supportedPoints              []uint8
+	encryptedClientHello         []byte
+	serverNameAck                bool
+
+	// HelloRetryRequest extensions
+	cookie        []byte
+	selectedGroup tls.CurveID
 }
 
 //go:linkname sendAlert crypto/tls.(*Conn).sendAlert
@@ -230,23 +380,25 @@ const (
 )
 
 type clientHandshakeStateTLS13 struct {
-	c           *Conn
-	ctx         context.Context
-	serverHello *serverHelloMsg
-	hello       *clientHelloMsg
-	ecdheKey    *ecdh.PrivateKey
+	c            *Conn
+	ctx          context.Context
+	serverHello  *serverHelloMsg
+	hello        *clientHelloMsg
+	keyShareKeys *keySharePrivateKeys
 
 	session     *sessionState
-	earlySecret []byte
+	earlySecret *earlySecret
 	binderKey   []byte
 
-	certReq       *uintptr
+	certReq       unsafe.Pointer
 	usingPSK      bool
 	sentDummyCCS  bool
 	suite         *cipherSuiteTLS13
 	transcript    hash.Hash
-	masterSecret  []byte
+	masterSecret  unsafe.Pointer
 	trafficSecret []byte // client_application_traffic_secret_0
+
+	echContext *echClientContext
 }
 
 //go:linkname handshake13 crypto/tls.(*clientHandshakeStateTLS13).handshake
@@ -255,6 +407,8 @@ func handshake13(hs *clientHandshakeStateTLS13) error
 func (hs *clientHandshakeStateTLS13) handshake() error {
 	return handshake13(hs)
 }
+
+type prfFunc func(secret []byte, label string, seed []byte, keyLen int) []byte
 
 // A finishedHash calculates the hash of a set of handshake messages suitable
 // for including in a Finished message.
@@ -270,7 +424,7 @@ type finishedHash struct {
 	buffer []byte
 
 	version uint16
-	prf     func(result, secret, label, seed []byte)
+	prf     prfFunc
 }
 
 type clientHandshakeState struct {
@@ -278,7 +432,7 @@ type clientHandshakeState struct {
 	ctx          context.Context
 	serverHello  *serverHelloMsg
 	hello        *clientHelloMsg
-	suite        *uintptr
+	suite        unsafe.Pointer
 	finishedHash finishedHash
 	masterSecret []byte
 	session      *sessionState // the session being resumed
@@ -291,6 +445,9 @@ func handshake(hs *clientHandshakeState) error
 func (hs *clientHandshakeState) handshake() error {
 	return handshake(hs)
 }
+
+//go:linkname computeAndUpdateOuterECHExtension crypto/tls.computeAndUpdateOuterECHExtension
+func computeAndUpdateOuterECHExtension(outer, inner *clientHelloMsg, ech *echClientContext, useKey bool) error
 
 // writeHandshakeRecord writes a handshake message to the connection and updates
 // the record layer state. If transcript is non-nil the marshalled message is
@@ -322,7 +479,7 @@ func (cout *Conn) clientHandshake(firstFragmentLen uint8) func(context.Context) 
 		// need to be reset.
 		c.didResume = false
 
-		hello, ecdheKey, err := c.makeClientHello()
+		hello, keyShareKeys, ech, err := c.makeClientHello()
 		if err != nil {
 			return err
 		}
@@ -348,6 +505,31 @@ func (cout *Conn) clientHandshake(firstFragmentLen uint8) func(context.Context) 
 			}()
 		}
 
+		if ech != nil {
+			// Split hello into inner and outer
+			ech.innerHello = hello.clone()
+
+			// Overwrite the server name in the outer hello with the public facing
+			// name.
+			hello.serverName = string(ech.config.PublicName)
+			// Generate a new random for the outer hello.
+			hello.random = make([]byte, 32)
+			_, err = io.ReadFull(tlsConfigRand(c.config), hello.random)
+			if err != nil {
+				return errors.New("tls: short read from Rand: " + err.Error())
+			}
+
+			// NOTE: we don't do PSK GREASE, in line with boringssl, it's meant to
+			// work around _possibly_ broken middleboxes, but there is little-to-no
+			// evidence that this is actually a problem.
+
+			if err := computeAndUpdateOuterECHExtension(hello, ech.innerHello, ech, true); err != nil {
+				return err
+			}
+		}
+
+		c.serverName = hello.serverName
+
 		if _, err := c.writeHandshakeRecord(hello, nil, firstFragmentLen); err != nil {
 			return err
 		}
@@ -358,7 +540,7 @@ func (cout *Conn) clientHandshake(firstFragmentLen uint8) func(context.Context) 
 			if err := transcriptMsg(hello, transcript); err != nil {
 				return err
 			}
-			earlyTrafficSecret := suite.deriveSecret(earlySecret, clientEarlyTrafficLabel, transcript)
+			earlyTrafficSecret := clientEarlyTrafficSecret(earlySecret, transcript)
 			quicSetWriteSecret(c, tls.QUICEncryptionLevelEarly, suite.id, earlyTrafficSecret)
 		}
 
@@ -395,14 +577,15 @@ func (cout *Conn) clientHandshake(firstFragmentLen uint8) func(context.Context) 
 
 		if c.vers == tls.VersionTLS13 {
 			hs := &clientHandshakeStateTLS13{
-				c:           cout,
-				ctx:         ctx,
-				serverHello: serverHello,
-				hello:       hello,
-				ecdheKey:    ecdheKey,
-				session:     session,
-				earlySecret: earlySecret,
-				binderKey:   binderKey,
+				c:            cout,
+				ctx:          ctx,
+				serverHello:  serverHello,
+				hello:        hello,
+				keyShareKeys: keyShareKeys,
+				session:      session,
+				earlySecret:  earlySecret,
+				binderKey:    binderKey,
+				echContext:   ech,
 			}
 
 			// In TLS 1.3, session tickets are delivered after the handshake.
