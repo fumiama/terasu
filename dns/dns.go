@@ -31,6 +31,14 @@ type dnsstat struct {
 	e bool
 }
 
+func (ds *dnsstat) disable(reEnable time.Duration) {
+	ds.e = false
+	// re-enable after some times
+	time.AfterFunc(reEnable, func() {
+		ds.e = true
+	})
+}
+
 type DNSList struct {
 	sync.RWMutex
 	m map[string][]*dnsstat
@@ -105,7 +113,7 @@ func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) ([]string, er
 					return hosts, nil
 				}
 			}
-			addr.e = false // no need to acquire write lock
+			addr.disable(time.Hour) // no need to acquire write lock
 		}
 	}
 	if addrs, ok := ds.b[host]; ok {
@@ -141,7 +149,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 			}
 			conn, err = dialer.DialContext(ctx, "tcp", addr.a)
 			if err != nil {
-				addr.e = false // no need to acquire write lock
+				addr.disable(time.Hour) // no need to acquire write lock
 				continue
 			}
 			tlsConn = tls.Client(conn, &tls.Config{ServerName: host})
@@ -150,7 +158,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 				return
 			}
 			_ = tlsConn.Close()
-			addr.e = false // no need to acquire write lock
+			addr.disable(time.Hour) // no need to acquire write lock
 		}
 	}
 	return
