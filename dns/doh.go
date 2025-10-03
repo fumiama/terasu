@@ -10,9 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/FloatTech/ttl"
 	"golang.org/x/net/http2"
 
 	"github.com/fumiama/terasu"
@@ -65,23 +63,9 @@ func (jr *dohjsonresponse) hosts() []string {
 	return hosts
 }
 
-var lookupTable = ttl.NewCache[string, []string](time.Hour)
-
 var trsHTTP2ClientWithSystemDNS = http.Client{
 	Transport: &http2.Transport{
 		DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
-			if defaultDialer.Timeout != 0 {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, defaultDialer.Timeout)
-				defer cancel()
-			}
-
-			if !defaultDialer.Deadline.IsZero() {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithDeadline(ctx, defaultDialer.Deadline)
-				defer cancel()
-			}
-
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err
@@ -100,7 +84,7 @@ var trsHTTP2ClientWithSystemDNS = http.Client{
 			var conn net.Conn
 			var tlsConn *tls.Conn
 			for _, a := range addrs {
-				conn, err = defaultDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
+				conn, err = dnsDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
 				if err != nil {
 					continue
 				}
@@ -111,7 +95,7 @@ var trsHTTP2ClientWithSystemDNS = http.Client{
 				}
 				_ = tlsConn.Close()
 				tlsConn = nil
-				conn, err = defaultDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
+				conn, err = dnsDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
 				if err != nil {
 					continue
 				}
@@ -128,18 +112,18 @@ var trsHTTP2ClientWithSystemDNS = http.Client{
 	},
 }
 
-func lookupdoh(server, u string) (jr dohjsonresponse, err error) {
-	jr, err = lookupdohwithtype(server, u, preferreddohtype())
+func lookupdoh(ctx context.Context, server, u string) (jr dohjsonresponse, err error) {
+	jr, err = lookupdohwithtype(ctx, server, u, preferreddohtype())
 	if err == nil {
 		return
 	}
 	if ip.IsIPv6Available.Get() {
-		jr, err = lookupdohwithtype(server, u, recordTypeA)
+		jr, err = lookupdohwithtype(ctx, server, u, recordTypeA)
 	}
 	return
 }
 
-func lookupdohwithtype(server, u string, typ recordType) (jr dohjsonresponse, err error) {
+func lookupdohwithtype(ctx context.Context, server, u string, typ recordType) (jr dohjsonresponse, err error) {
 	sb := strings.Builder{}
 	sb.WriteString(server)
 	sb.WriteString("?name=")
@@ -148,7 +132,7 @@ func lookupdohwithtype(server, u string, typ recordType) (jr dohjsonresponse, er
 		sb.WriteString("&type=")
 		sb.WriteString(strconv.Itoa(int(typ)))
 	}
-	req, err := http.NewRequest("GET", sb.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", sb.String(), nil)
 	if err != nil {
 		return
 	}

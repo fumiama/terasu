@@ -28,7 +28,7 @@ func TestResolverFallback(t *testing.T) {
 	t.Log("IsIPv6Available:", ip.IsIPv6Available.Get())
 
 	if ip.IsIPv6Available.Get() {
-		addrs, err := IPv6Servers.LookupHostFallback(context.TODO(), "huggingface.co")
+		addrs, err := IPv6Servers.lookupHostDoH(context.TODO(), "huggingface.co")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -37,7 +37,7 @@ func TestResolverFallback(t *testing.T) {
 			t.Fail()
 		}
 	}
-	addrs, err := IPv4Servers.LookupHostFallback(context.TODO(), "huggingface.co")
+	addrs, err := IPv4Servers.lookupHostDoH(context.TODO(), "huggingface.co")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,11 +10,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/FloatTech/ttl"
-
 	"github.com/fumiama/terasu"
 	"github.com/fumiama/terasu/dns"
-	"github.com/fumiama/terasu/ip"
 )
 
 var (
@@ -23,49 +20,24 @@ var (
 )
 
 var defaultDialer = net.Dialer{
-	Timeout: time.Minute,
+	Timeout: 10 * time.Second,
 }
 
 func SetDefaultClientTimeout(t time.Duration) {
 	defaultDialer.Timeout = t
 }
 
-var lookupTable = ttl.NewCache[string, []string](time.Hour)
-
 var DefaultClient = http.Client{
 	Transport: &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if defaultDialer.Timeout != 0 {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, defaultDialer.Timeout)
-				defer cancel()
-			}
-
-			if !defaultDialer.Deadline.IsZero() {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithDeadline(ctx, defaultDialer.Deadline)
-				defer cancel()
-			}
-
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err
 			}
-			addrs := lookupTable.Get(host)
-			if len(addrs) == 0 {
-				addrs, err = dns.DefaultResolver.LookupHost(ctx, host)
-				if err != nil {
-					if ip.IsIPv6Available.Get() {
-						addrs, err = dns.IPv6Servers.LookupHostFallback(ctx, host)
-					} else {
-						addrs, err = dns.IPv4Servers.LookupHostFallback(ctx, host)
-					}
-					if err != nil {
-						return nil, err
-					}
-				}
-				lookupTable.Set(host, addrs)
+			addrs, err := dns.LookupHost(ctx, host)
+			if err != nil {
+				return nil, err
 			}
 			if len(addr) == 0 {
 				return nil, ErrEmptyHostAddress
@@ -73,6 +45,15 @@ var DefaultClient = http.Client{
 			var conn net.Conn
 			var tlsConn *tls.Conn
 			for _, a := range addrs {
+				if defaultDialer.Timeout != 0 {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(context.Background(), defaultDialer.Timeout)
+					defer cancel()
+				} else if !defaultDialer.Deadline.IsZero() {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithDeadline(context.Background(), defaultDialer.Deadline)
+					defer cancel()
+				}
 				conn, err = defaultDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
 				if err != nil {
 					continue

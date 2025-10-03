@@ -14,15 +14,16 @@ import (
 )
 
 var (
+	// ErrNoDNSAvailable is reported when all servers failed to response
 	ErrNoDNSAvailable = errors.New("no dns available")
 )
 
-var defaultDialer = net.Dialer{
+var dnsDialer = net.Dialer{
 	Timeout: time.Second * 4,
 }
 
 func SetTimeout(t time.Duration) {
-	defaultDialer.Timeout = t
+	dnsDialer.Timeout = t
 }
 
 type dnsstat struct {
@@ -88,7 +89,7 @@ func (ds *DNSList) Add(c *DNSConfig) {
 	}
 }
 
-func (ds *DNSList) LookupHostFallback(ctx context.Context, host string) ([]string, error) {
+func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) ([]string, error) {
 	ds.RLock()
 	defer ds.RUnlock()
 	// try to use DoH first
@@ -97,7 +98,7 @@ func (ds *DNSList) LookupHostFallback(ctx context.Context, host string) ([]strin
 			if !addr.e || !strings.HasPrefix(addr.a, "https://") { // disabled or is not DoH
 				continue
 			}
-			jr, err := lookupdoh(addr.a, host)
+			jr, err := lookupdoh(ctx, addr.a, host)
 			if err == nil {
 				hosts := jr.hosts()
 				if len(hosts) > 0 {
@@ -110,36 +111,33 @@ func (ds *DNSList) LookupHostFallback(ctx context.Context, host string) ([]strin
 	if addrs, ok := ds.b[host]; ok {
 		return addrs, nil
 	}
-	return net.DefaultResolver.LookupHost(ctx, host)
+	return nil, ErrNoDNSAvailable
 }
 
 func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFragmentLen uint8) (tlsConn *tls.Conn, err error) {
 	err = ErrNoDNSAvailable
 
 	if dialer == nil {
-		dialer = &defaultDialer
+		dialer = &dnsDialer
 	}
 
 	ds.RLock()
 	defer ds.RUnlock()
-
-	if dialer.Timeout != 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, dialer.Timeout)
-		defer cancel()
-	}
-
-	if !dialer.Deadline.IsZero() {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, dialer.Deadline)
-		defer cancel()
-	}
 
 	var conn net.Conn
 	for host, addrs := range ds.m {
 		for _, addr := range addrs {
 			if !addr.e || strings.HasPrefix(addr.a, "https://") { // disabled or is DoH
 				continue
+			}
+			if dialer.Timeout != 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(context.Background(), dialer.Timeout)
+				defer cancel()
+			} else if !dialer.Deadline.IsZero() {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(context.Background(), dialer.Deadline)
+				defer cancel()
 			}
 			conn, err = dialer.DialContext(ctx, "tcp", addr.a)
 			if err != nil {

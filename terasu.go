@@ -6,7 +6,7 @@ import (
 	"unsafe"
 )
 
-var DefaultFirstFragmentLen uint8 = 4
+var DefaultFirstFragmentLen uint8 = 3
 
 // Use terasu in this TLS conn
 func Use(conn *tls.Conn) *Conn {
