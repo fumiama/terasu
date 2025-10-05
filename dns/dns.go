@@ -173,8 +173,10 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 				defer cancel()
 			}
 			conn, err = dialer.DialContext(ctx, "tcp", addr.a)
-			if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-				addr.disable(time.Hour) // no need to acquire write lock
+			if err != nil {
+				if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+					addr.disable(time.Hour) // no need to acquire write lock
+				}
 				continue
 			}
 			tlsConn = tls.Client(conn, &tls.Config{ServerName: host})
