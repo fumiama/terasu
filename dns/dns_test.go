@@ -66,9 +66,13 @@ func TestDNS(t *testing.T) {
 }
 
 func TestBadDNS(t *testing.T) {
+	dotv6serversseqbak := IPv6Servers.hostseq
+	dotv4serversseqbak := IPv4Servers.hostseq
 	dotv6serversbak := IPv6Servers.m
 	dotv4serversbak := IPv4Servers.m
 	defer func() {
+		IPv6Servers.hostseq = dotv6serversseqbak
+		IPv4Servers.hostseq = dotv4serversseqbak
 		IPv6Servers.m = dotv6serversbak
 		IPv4Servers.m = dotv4serversbak
 	}()
@@ -100,7 +104,7 @@ func TestBadDNS(t *testing.T) {
 func (ds *DNSList) test() {
 	ds.RLock()
 	defer ds.RUnlock()
-	for host, addrs := range ds.m {
+	_ = ds.rangeHosts(func(host string, addrs []*dnsstat) error {
 		for _, addr := range addrs {
 			if !addr.e {
 				continue
@@ -119,5 +123,6 @@ func (ds *DNSList) test() {
 			}
 			fmt.Println("fail:", host, addr.a)
 		}
-	}
+		return nil
+	})
 }
