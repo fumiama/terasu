@@ -180,7 +180,11 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 				continue
 			}
 			tlsConn = tls.Client(conn, &tls.Config{ServerName: host})
-			err = terasu.Use(tlsConn).HandshakeContext(ctx, firstFragmentLen)
+			if firstFragmentLen > 0 {
+				err = terasu.Use(tlsConn).HandshakeContext(ctx, firstFragmentLen)
+			} else {
+				err = tlsConn.HandshakeContext(ctx)
+			}
 			if err == nil {
 				return nil
 			}
@@ -268,7 +272,7 @@ var IPv4Servers = DNSList{
 
 var DefaultResolver = &net.Resolver{
 	PreferGo: true,
-	Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+	Dial: func(ctx context.Context, nw, _ string) (net.Conn, error) {
 		if ip.IsIPv6Available.Get() {
 			return IPv6Servers.DialContext(ctx, nil, terasu.DefaultFirstFragmentLen)
 		}
