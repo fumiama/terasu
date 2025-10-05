@@ -132,7 +132,9 @@ func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) (hosts []stri
 					return nil
 				}
 			}
-			addr.disable(time.Hour) // no need to acquire write lock
+			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+				addr.disable(time.Hour) // no need to acquire write lock
+			}
 		}
 		return nil // not found, fallback to ds.b
 	})
@@ -171,7 +173,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 				defer cancel()
 			}
 			conn, err = dialer.DialContext(ctx, "tcp", addr.a)
-			if err != nil {
+			if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 				addr.disable(time.Hour) // no need to acquire write lock
 				continue
 			}
@@ -181,7 +183,9 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 				return nil
 			}
 			_ = tlsConn.Close()
-			addr.disable(time.Hour) // no need to acquire write lock
+			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+				addr.disable(time.Hour) // no need to acquire write lock
+			}
 		}
 		return nil
 	})
