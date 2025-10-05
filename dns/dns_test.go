@@ -13,7 +13,7 @@ import (
 )
 
 func TestResolver(t *testing.T) {
-	t.Log("IsIPv6Available:", ip.IsIPv6Available.Get())
+	t.Log("IsIPv6Available:", ip.IsIPv6Available)
 	addrs, err := DefaultResolver.LookupHost(context.TODO(), "huggingface.co")
 	if err != nil {
 		t.Fatal(err)
@@ -25,9 +25,9 @@ func TestResolver(t *testing.T) {
 }
 
 func TestResolverFallback(t *testing.T) {
-	t.Log("IsIPv6Available:", ip.IsIPv6Available.Get())
+	t.Log("IsIPv6Available:", ip.IsIPv6Available)
 
-	if ip.IsIPv6Available.Get() {
+	if ip.IsIPv6Available {
 		addrs, err := IPv6Servers.lookupHostDoH(context.TODO(), "huggingface.co")
 		if err != nil {
 			t.Fatal(err)
@@ -48,7 +48,7 @@ func TestResolverFallback(t *testing.T) {
 }
 
 func TestDNS(t *testing.T) {
-	if ip.IsIPv6Available.Get() {
+	if ip.IsIPv6Available {
 		IPv6Servers.test()
 	}
 	IPv4Servers.test()
@@ -76,7 +76,7 @@ func TestBadDNS(t *testing.T) {
 		IPv6Servers.m = dotv6serversbak
 		IPv4Servers.m = dotv4serversbak
 	}()
-	if ip.IsIPv6Available.Get() {
+	if ip.IsIPv6Available {
 		IPv6Servers = DNSList{
 			m: map[string][]*dnsstat{},
 		}

@@ -16,7 +16,7 @@ func LookupHost(ctx context.Context, host string) (addrs []string, err error) {
 	if len(addrs) == 0 {
 		addrs, err = DefaultResolver.LookupHost(ctx, host)
 		if err != nil {
-			if ip.IsIPv6Available.Get() {
+			if ip.IsIPv6Available {
 				addrs, err = IPv6Servers.lookupHostDoH(ctx, host)
 			} else {
 				addrs, err = IPv4Servers.lookupHostDoH(ctx, host)

@@ -273,7 +273,7 @@ var IPv4Servers = DNSList{
 var DefaultResolver = &net.Resolver{
 	PreferGo: true,
 	Dial: func(ctx context.Context, nw, _ string) (net.Conn, error) {
-		if ip.IsIPv6Available.Get() {
+		if ip.IsIPv6Available {
 			return IPv6Servers.DialContext(ctx, nil, terasu.DefaultFirstFragmentLen)
 		}
 		return IPv4Servers.DialContext(ctx, nil, terasu.DefaultFirstFragmentLen)

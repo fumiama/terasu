@@ -121,7 +121,7 @@ func lookupdoh(ctx context.Context, server, u string) (jr dohjsonresponse, err e
 	if err == nil {
 		return
 	}
-	if ip.IsIPv6Available.Get() {
+	if ip.IsIPv6Available {
 		jr, err = lookupdohwithtype(ctx, server, u, recordTypeA)
 	}
 	return
@@ -157,7 +157,7 @@ func lookupdohwithtype(ctx context.Context, server, u string, typ recordType) (j
 }
 
 func preferreddohtype() recordType {
-	if ip.IsIPv6Available.Get() {
+	if ip.IsIPv6Available {
 		return recordTypeAAAA
 	}
 	return recordTypeA
