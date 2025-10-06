@@ -207,6 +207,16 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 				MinVersion: tls.VersionTLS12,
 				NextProtos: []string{"dns"},
 			})
+			// re-init ctx due to deadline settings in tcp dial
+			if dialer.Timeout != 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(context.Background(), dialer.Timeout)
+				defer cancel()
+			} else if !dialer.Deadline.IsZero() {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(context.Background(), dialer.Deadline)
+				defer cancel()
+			}
 			if firstFragmentLen > 0 {
 				logrus.Debugln("[terasu.dns] -- hs tls", host, addr, "use first frag len", firstFragmentLen)
 				err = terasu.Use(tlsConn).HandshakeContext(ctx, firstFragmentLen)
@@ -218,9 +228,10 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 				logrus.Debugln("[terasu.dns] <- hs tls", host, addr, "succeeded")
 				return ErrSuccess
 			}
-			logrus.Debugln("[terasu.dns] hs tls", host, addr, "err:", err)
+			logrus.Debugln("[terasu.dns] -- hs tls", host, addr, "err:", err)
 			_ = tlsConn.Close()
 			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+				logrus.Debugln("[terasu.dns] == disable", host, addr)
 				addr.disable(time.Hour) // no need to acquire write lock
 			}
 		}
