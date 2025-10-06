@@ -30,16 +30,22 @@ func SetTimeout(t time.Duration) {
 }
 
 type dnsstat struct {
-	a string
-	e bool
+	addr string
+	en   bool
+	keep bool
 }
 
 func (ds *dnsstat) String() string {
 	sb := strings.Builder{}
 	sb.WriteString("[addr: ")
-	sb.WriteString(ds.a)
+	sb.WriteString(ds.addr)
 	sb.WriteString(", enable: ")
-	if ds.e {
+	if ds.en {
+		sb.WriteString("true, keep: ")
+	} else {
+		sb.WriteString("false, keep: ")
+	}
+	if ds.keep {
 		sb.WriteString("true]")
 	} else {
 		sb.WriteString("false]")
@@ -47,11 +53,26 @@ func (ds *dnsstat) String() string {
 	return sb.String()
 }
 
+func (ds *dnsstat) ishttps() bool {
+	return strings.HasPrefix(ds.addr, "https://")
+}
+
+func (ds *dnsstat) keepit() {
+	ds.keep = true
+}
+
+func (ds *dnsstat) enabled() bool {
+	return ds.keep || ds.en
+}
+
 func (ds *dnsstat) disable(reEnable time.Duration) {
-	ds.e = false
+	if ds.keep {
+		return
+	}
+	ds.en = false
 	// re-enable after some times
 	time.AfterFunc(reEnable, func() {
-		ds.e = true
+		ds.en = true
 	})
 }
 
@@ -70,7 +91,7 @@ type DNSConfig struct {
 // hasrecord no lock, use under lock
 func hasrecord(lst []*dnsstat, a string) bool {
 	for _, addr := range lst {
-		if addr.a == a {
+		if addr.addr == a {
 			return true
 		}
 	}
@@ -99,7 +120,7 @@ func (ds *DNSList) Add(c *DNSConfig) {
 		}
 		for _, addr := range addrs {
 			if !hasrecord(availableHosts, addr) && !hasrecord(addList[host], addr) {
-				addList[host] = append(addList[host], &dnsstat{addr, true})
+				addList[host] = append(addList[host], &dnsstat{addr, true, false})
 			}
 		}
 	}
@@ -138,13 +159,15 @@ func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) (hosts []stri
 	// try to use DoH first
 	err = ds.rangeHosts(func(_ string, addrs []*dnsstat) error {
 		for _, addr := range addrs {
-			if !addr.e || !strings.HasPrefix(addr.a, "https://") { // disabled or is not DoH
+			if !addr.enabled() || !addr.ishttps() { // disabled or is not DoH
 				continue
 			}
-			jr, err := lookupdoh(ctx, addr.a, host)
+			jr, err := lookupdoh(ctx, addr.addr, host)
 			if err == nil {
 				hosts = jr.hosts()
 				if len(hosts) > 0 {
+					// this is a successful server, keep it
+					addr.keepit()
 					return ErrSuccess
 				}
 			}
@@ -179,7 +202,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 	var conn net.Conn
 	_ = ds.rangeHosts(func(host string, addrs []*dnsstat) error {
 		for _, addr := range addrs {
-			if !addr.e || strings.HasPrefix(addr.a, "https://") { // disabled or is DoH
+			if !addr.enabled() || addr.ishttps() { // disabled or is DoH
 				continue
 			}
 			logrus.Debugln("[terasu.dns] -> dial", host, addr)
@@ -192,7 +215,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 				ctx, cancel = context.WithDeadline(context.Background(), dialer.Deadline)
 				defer cancel()
 			}
-			conn, err = dialer.DialContext(ctx, "tcp", addr.a)
+			conn, err = dialer.DialContext(ctx, "tcp", addr.addr)
 			if err != nil {
 				logrus.Debugln("[terasu.dns] -- dial tcp", host, addr, "err:", err)
 				if !errors.Is(err, context.Canceled) {
@@ -226,6 +249,8 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 			}
 			if err == nil {
 				logrus.Debugln("[terasu.dns] <- hs tls", host, addr, "succeeded")
+				// this is a successful server, keep it
+				addr.keepit()
 				return ErrSuccess
 			}
 			logrus.Debugln("[terasu.dns] -- hs tls", host, addr, "err:", err)
@@ -246,31 +271,31 @@ var IPv6Servers = DNSList{
 	},
 	m: map[string][]*dnsstat{
 		"dot.sb": {
-			{"[2a09::]:853", true},
-			{"[2a11::]:853", true},
-			{"https://doh.sb/dns-query", true},
+			{"[2a09::]:853", true, false},
+			{"[2a11::]:853", true, false},
+			{"https://doh.sb/dns-query", true, false},
 		},
 		"dns.google": {
-			{"[2001:4860:4860::8888]:853", true},
-			{"[2001:4860:4860::8844]:853", true},
-			{"https://dns.google/resolve", true},
-			{"https://[2001:4860:4860::8888]/resolve", true},
-			{"https://[2001:4860:4860::8844]/resolve", true},
+			{"[2001:4860:4860::8888]:853", true, false},
+			{"[2001:4860:4860::8844]:853", true, false},
+			{"https://dns.google/resolve", true, false},
+			{"https://[2001:4860:4860::8888]/resolve", true, false},
+			{"https://[2001:4860:4860::8844]/resolve", true, false},
 		},
 		"cloudflare-dns.com": {
-			{"[2606:4700:4700::1111]:853", true},
-			{"[2606:4700:4700::1001]:853", true},
-			{"https://cloudflare-dns.com/dns-query", true},
-			{"https://[2606:4700:4700::1111]/dns-query", true},
-			{"https://[2606:4700:4700::1001]/dns-query", true},
+			{"[2606:4700:4700::1111]:853", true, false},
+			{"[2606:4700:4700::1001]:853", true, false},
+			{"https://cloudflare-dns.com/dns-query", true, false},
+			{"https://[2606:4700:4700::1111]/dns-query", true, false},
+			{"https://[2606:4700:4700::1001]/dns-query", true, false},
 		},
 		"dns.opendns.com": {
-			{"[2620:119:35::35]:853", true},
-			{"[2620:119:53::53]:853", true},
+			{"[2620:119:35::35]:853", true, false},
+			{"[2620:119:53::53]:853", true, false},
 		},
 		"dns10.quad9.net": {
-			{"[2620:fe::10]:853", true},
-			{"[2620:fe::fe:10]:853", true},
+			{"[2620:fe::10]:853", true, false},
+			{"[2620:fe::fe:10]:853", true, false},
 		},
 	},
 	b: map[string][]string{},
@@ -282,31 +307,31 @@ var IPv4Servers = DNSList{
 	},
 	m: map[string][]*dnsstat{
 		"dot.sb": {
-			{"185.222.222.222:853", true},
-			{"45.11.45.11:853", true},
-			{"https://doh.sb/dns-query", true},
+			{"185.222.222.222:853", true, false},
+			{"45.11.45.11:853", true, false},
+			{"https://doh.sb/dns-query", true, false},
 		},
 		"dns.google": {
-			{"8.8.8.8:853", true},
-			{"8.8.4.4:853", true},
-			{"https://dns.google/resolve", true},
-			{"https://8.8.8.8/resolve", true},
-			{"https://8.8.4.4/resolve", true},
+			{"8.8.8.8:853", true, false},
+			{"8.8.4.4:853", true, false},
+			{"https://dns.google/resolve", true, false},
+			{"https://8.8.8.8/resolve", true, false},
+			{"https://8.8.4.4/resolve", true, false},
 		},
 		"cloudflare-dns.com": {
-			{"1.1.1.1:853", true},
-			{"1.0.0.1:853", true},
-			{"https://cloudflare-dns.com/dns-query", true},
-			{"https://1.1.1.1/dns-query", true},
-			{"https://1.0.0.1/dns-query", true},
+			{"1.1.1.1:853", true, false},
+			{"1.0.0.1:853", true, false},
+			{"https://cloudflare-dns.com/dns-query", true, false},
+			{"https://1.1.1.1/dns-query", true, false},
+			{"https://1.0.0.1/dns-query", true, false},
 		},
 		"dns.opendns.com": {
-			{"208.67.222.222:853", true},
-			{"208.67.220.220:853", true},
+			{"208.67.222.222:853", true, false},
+			{"208.67.220.220:853", true, false},
 		},
 		"dns10.quad9.net": {
-			{"9.9.9.10:853", true},
-			{"149.112.112.10:853", true},
+			{"9.9.9.10:853", true, false},
+			{"149.112.112.10:853", true, false},
 		},
 	},
 	b: map[string][]string{},
