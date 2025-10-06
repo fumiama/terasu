@@ -11,6 +11,7 @@ import (
 
 	"github.com/fumiama/terasu"
 	"github.com/fumiama/terasu/ip"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -163,6 +164,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 			if !addr.e || strings.HasPrefix(addr.a, "https://") { // disabled or is DoH
 				continue
 			}
+			logrus.Debugln("[terasu.dns] start dial", host, addr)
 			if dialer.Timeout != 0 {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithTimeout(context.Background(), dialer.Timeout)
@@ -174,24 +176,29 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 			}
 			conn, err = dialer.DialContext(ctx, "tcp", addr.a)
 			if err != nil {
+				logrus.Debugln("[terasu.dns] dial tcp", host, addr, "err:", err)
 				if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 					addr.disable(time.Hour) // no need to acquire write lock
 				}
 				continue
 			}
+			logrus.Debugln("[terasu.dns] start hs tls", host, addr)
 			tlsConn = tls.Client(conn, &tls.Config{
 				ServerName: host,
 				MinVersion: tls.VersionTLS12,
 				NextProtos: []string{"dns"},
 			})
 			if firstFragmentLen > 0 {
+				logrus.Debugln("[terasu.dns] hs tls", host, addr, "use first frag len", firstFragmentLen)
 				err = terasu.Use(tlsConn).HandshakeContext(ctx, firstFragmentLen)
 			} else {
+				logrus.Debugln("[terasu.dns] hs tls", host, addr, "normally")
 				err = tlsConn.HandshakeContext(ctx)
 			}
 			if err == nil {
 				return nil
 			}
+			logrus.Debugln("[terasu.dns] hs tls", host, addr, "err:", err)
 			_ = tlsConn.Close()
 			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 				addr.disable(time.Hour) // no need to acquire write lock
