@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/fumiama/terasu"
@@ -171,7 +172,9 @@ func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) (hosts []stri
 					return ErrSuccess
 				}
 			}
-			if !errors.Is(err, context.Canceled) {
+			if !errors.Is(err, context.Canceled) &&
+				!errors.Is(err, syscall.ENETUNREACH) &&
+				!errors.Is(err, syscall.ENETDOWN) {
 				addr.disable(time.Hour) // no need to acquire write lock
 			}
 		}
@@ -218,7 +221,9 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 			conn, err = dialer.DialContext(ctx, "tcp", addr.addr)
 			if err != nil {
 				logrus.Debugln("[terasu.dns] -- dial tcp", host, addr, "err:", err)
-				if !errors.Is(err, context.Canceled) {
+				if !errors.Is(err, context.Canceled) &&
+					!errors.Is(err, syscall.ENETUNREACH) &&
+					!errors.Is(err, syscall.ENETDOWN) {
 					addr.disable(time.Hour) // no need to acquire write lock
 				}
 				continue
@@ -255,7 +260,9 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 			}
 			logrus.Debugln("[terasu.dns] -- hs tls", host, addr, "err:", err)
 			_ = tlsConn.Close()
-			if !errors.Is(err, context.Canceled) {
+			if !errors.Is(err, context.Canceled) &&
+				!errors.Is(err, syscall.ENETUNREACH) &&
+				!errors.Is(err, syscall.ENETDOWN) {
 				logrus.Debugln("[terasu.dns] == disable", host, addr)
 				addr.disable(time.Hour) // no need to acquire write lock
 			}
