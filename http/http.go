@@ -60,6 +60,7 @@ var DefaultClient = http.Client{
 				}
 				tlsConn = tls.Client(conn, &tls.Config{
 					ServerName: host,
+					MinVersion: tls.VersionTLS12,
 				})
 				if terasu.DefaultFirstFragmentLen > 0 {
 					err = terasu.Use(tlsConn).HandshakeContext(ctx, terasu.DefaultFirstFragmentLen)
@@ -77,6 +78,7 @@ var DefaultClient = http.Client{
 				}
 				tlsConn = tls.Client(conn, &tls.Config{
 					ServerName: host,
+					MinVersion: tls.VersionTLS12,
 				})
 				err = tlsConn.HandshakeContext(ctx)
 				if err == nil {

@@ -19,6 +19,7 @@ func TestHTTPDialTLS13(t *testing.T) {
 				t.Log("net.Dial succeeded")
 				tlsConn := tls.Client(conn, &tls.Config{
 					ServerName:         "huggingface.co",
+					MinVersion:         tls.VersionTLS12,
 					InsecureSkipVerify: true,
 				})
 				err = Use(tlsConn).Handshake(4)
@@ -57,6 +58,7 @@ func TestHTTPDialTLS12(t *testing.T) {
 				tlsConn := tls.Client(conn, &tls.Config{
 					ServerName:         "huggingface.co",
 					InsecureSkipVerify: true,
+					MinVersion:         tls.VersionTLS12,
 					MaxVersion:         tls.VersionTLS12,
 				})
 				err = Use(tlsConn).Handshake(4)
