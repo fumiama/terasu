@@ -17,6 +17,8 @@ import (
 var (
 	// ErrNoDNSAvailable is reported when all servers failed to response
 	ErrNoDNSAvailable = errors.New("no dns available")
+	// ErrSuccess is designed for range hosts to break
+	ErrSuccess = errors.New("success")
 )
 
 var dnsDialer = net.Dialer{
@@ -30,6 +32,19 @@ func SetTimeout(t time.Duration) {
 type dnsstat struct {
 	a string
 	e bool
+}
+
+func (ds *dnsstat) String() string {
+	sb := strings.Builder{}
+	sb.WriteString("[addr: ")
+	sb.WriteString(ds.a)
+	sb.WriteString(", enable: ")
+	if ds.e {
+		sb.WriteString("true]")
+	} else {
+		sb.WriteString("false]")
+	}
+	return sb.String()
 }
 
 func (ds *dnsstat) disable(reEnable time.Duration) {
@@ -130,7 +145,7 @@ func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) (hosts []stri
 			if err == nil {
 				hosts = jr.hosts()
 				if len(hosts) > 0 {
-					return nil
+					return ErrSuccess
 				}
 			}
 			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
@@ -139,6 +154,9 @@ func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) (hosts []stri
 		}
 		return nil // not found, fallback to ds.b
 	})
+	if errors.Is(err, ErrSuccess) {
+		err = nil
+	}
 	if len(hosts) > 0 || err != nil {
 		return
 	}
@@ -164,7 +182,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 			if !addr.e || strings.HasPrefix(addr.a, "https://") { // disabled or is DoH
 				continue
 			}
-			logrus.Debugln("[terasu.dns] start dial", host, addr)
+			logrus.Debugln("[terasu.dns] -> dial", host, addr)
 			if dialer.Timeout != 0 {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithTimeout(context.Background(), dialer.Timeout)
@@ -176,27 +194,29 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 			}
 			conn, err = dialer.DialContext(ctx, "tcp", addr.a)
 			if err != nil {
-				logrus.Debugln("[terasu.dns] dial tcp", host, addr, "err:", err)
+				logrus.Debugln("[terasu.dns] -- dial tcp", host, addr, "err:", err)
 				if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 					addr.disable(time.Hour) // no need to acquire write lock
 				}
 				continue
 			}
-			logrus.Debugln("[terasu.dns] start hs tls", host, addr)
+			logrus.Debugln("[terasu.dns] <- dial tcp", host, addr, "succeeded")
+			logrus.Debugln("[terasu.dns] -> hs tls", host, addr)
 			tlsConn = tls.Client(conn, &tls.Config{
 				ServerName: host,
 				MinVersion: tls.VersionTLS12,
 				NextProtos: []string{"dns"},
 			})
 			if firstFragmentLen > 0 {
-				logrus.Debugln("[terasu.dns] hs tls", host, addr, "use first frag len", firstFragmentLen)
+				logrus.Debugln("[terasu.dns] -- hs tls", host, addr, "use first frag len", firstFragmentLen)
 				err = terasu.Use(tlsConn).HandshakeContext(ctx, firstFragmentLen)
 			} else {
-				logrus.Debugln("[terasu.dns] hs tls", host, addr, "normally")
+				logrus.Debugln("[terasu.dns] -- hs tls", host, addr, "normally")
 				err = tlsConn.HandshakeContext(ctx)
 			}
 			if err == nil {
-				return nil
+				logrus.Debugln("[terasu.dns] <- hs tls", host, addr, "succeeded")
+				return ErrSuccess
 			}
 			logrus.Debugln("[terasu.dns] hs tls", host, addr, "err:", err)
 			_ = tlsConn.Close()
