@@ -182,6 +182,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 			tlsConn = tls.Client(conn, &tls.Config{
 				ServerName: host,
 				MinVersion: tls.VersionTLS12,
+				NextProtos: []string{"dns"},
 			})
 			if firstFragmentLen > 0 {
 				err = terasu.Use(tlsConn).HandshakeContext(ctx, firstFragmentLen)
