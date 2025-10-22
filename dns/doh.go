@@ -88,12 +88,8 @@ var trsHTTP2ClientWithSystemDNS = http.Client{
 				if err != nil {
 					continue
 				}
-				tlsConn = tls.Client(conn, cfg)
-				if terasu.DefaultFirstFragmentLen > 0 {
-					err = terasu.Use(tlsConn).HandshakeContext(ctx, terasu.DefaultFirstFragmentLen)
-				} else {
-					err = tlsConn.HandshakeContext(ctx)
-				}
+				tlsConn = tls.Client(terasu.NewConn(conn), cfg)
+				err = tlsConn.HandshakeContext(ctx)
 				if err == nil {
 					break
 				}
@@ -103,7 +99,7 @@ var trsHTTP2ClientWithSystemDNS = http.Client{
 				if err != nil {
 					continue
 				}
-				tlsConn = tls.Client(conn, cfg)
+				tlsConn = tls.Client(terasu.NewConn(conn), cfg)
 				err = tlsConn.HandshakeContext(ctx)
 				if err == nil {
 					break

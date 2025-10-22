@@ -192,7 +192,7 @@ func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) (hosts []stri
 	return nil, ErrNoDNSAvailable
 }
 
-func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFragmentLen uint8) (tlsConn *tls.Conn, err error) {
+func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer) (tlsConn *tls.Conn, err error) {
 	err = ErrNoDNSAvailable
 
 	if dialer == nil {
@@ -230,7 +230,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 			}
 			logrus.Debugln("[terasu.dns] <- dial tcp", host, addr, "succeeded")
 			logrus.Debugln("[terasu.dns] -> hs tls", host, addr)
-			tlsConn = tls.Client(conn, &tls.Config{
+			tlsConn = tls.Client(terasu.NewConn(conn), &tls.Config{
 				ServerName: host,
 				MinVersion: tls.VersionTLS12,
 				NextProtos: []string{"dns"},
@@ -245,13 +245,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer, firstFra
 				ctx, cancel = context.WithDeadline(context.Background(), dialer.Deadline)
 				defer cancel()
 			}
-			if firstFragmentLen > 0 {
-				logrus.Debugln("[terasu.dns] -- hs tls", host, addr, "use first frag len", firstFragmentLen)
-				err = terasu.Use(tlsConn).HandshakeContext(ctx, firstFragmentLen)
-			} else {
-				logrus.Debugln("[terasu.dns] -- hs tls", host, addr, "normally")
-				err = tlsConn.HandshakeContext(ctx)
-			}
+			err = tlsConn.HandshakeContext(ctx)
 			if err == nil {
 				logrus.Debugln("[terasu.dns] <- hs tls", host, addr, "succeeded")
 				// this is a successful server, keep it
@@ -348,8 +342,8 @@ var DefaultResolver = &net.Resolver{
 	PreferGo: true,
 	Dial: func(ctx context.Context, nw, _ string) (net.Conn, error) {
 		if ip.IsIPv6Available {
-			return IPv6Servers.DialContext(ctx, nil, terasu.DefaultFirstFragmentLen)
+			return IPv6Servers.DialContext(ctx, nil)
 		}
-		return IPv4Servers.DialContext(ctx, nil, terasu.DefaultFirstFragmentLen)
+		return IPv4Servers.DialContext(ctx, nil)
 	},
 }

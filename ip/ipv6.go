@@ -1,3 +1,3 @@
 package ip
 
-var IsIPv6Available = true
+var IsIPv6Available = false

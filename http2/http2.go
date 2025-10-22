@@ -58,7 +58,7 @@ var DefaultClient = http.Client{
 				if err != nil {
 					continue
 				}
-				tlsConn = tls.Client(conn, cfg)
+				tlsConn = tls.Client(terasu.NewConn(conn), cfg)
 				// re-init ctx due to deadline settings in tcp dial
 				if defaultDialer.Timeout != 0 {
 					var cancel context.CancelFunc
@@ -69,11 +69,7 @@ var DefaultClient = http.Client{
 					ctx, cancel = context.WithDeadline(context.Background(), defaultDialer.Deadline)
 					defer cancel()
 				}
-				if terasu.DefaultFirstFragmentLen > 0 {
-					err = terasu.Use(tlsConn).HandshakeContext(ctx, terasu.DefaultFirstFragmentLen)
-				} else {
-					err = tlsConn.HandshakeContext(ctx)
-				}
+				err = tlsConn.HandshakeContext(ctx)
 				if err == nil {
 					break
 				}
@@ -83,7 +79,7 @@ var DefaultClient = http.Client{
 				if err != nil {
 					continue
 				}
-				tlsConn = tls.Client(conn, cfg)
+				tlsConn = tls.Client(terasu.NewConn(conn), cfg)
 				err = tlsConn.HandshakeContext(ctx)
 				if err == nil {
 					break

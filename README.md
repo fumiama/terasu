@@ -15,5 +15,7 @@
 ## Usage
 
 ```go
-terasu.Use(tlsConn).Handshake()
+tls.Client(terasu.NewConn(conn), &tls.Config{
+    ServerName: host,
+}).Handshake()
 ```

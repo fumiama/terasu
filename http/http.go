@@ -58,7 +58,7 @@ var DefaultClient = http.Client{
 				if err != nil {
 					continue
 				}
-				tlsConn = tls.Client(conn, &tls.Config{
+				tlsConn = tls.Client(terasu.NewConn(conn), &tls.Config{
 					ServerName: host,
 					MinVersion: tls.VersionTLS12,
 				})
@@ -72,11 +72,7 @@ var DefaultClient = http.Client{
 					ctx, cancel = context.WithDeadline(context.Background(), defaultDialer.Deadline)
 					defer cancel()
 				}
-				if terasu.DefaultFirstFragmentLen > 0 {
-					err = terasu.Use(tlsConn).HandshakeContext(ctx, terasu.DefaultFirstFragmentLen)
-				} else {
-					err = tlsConn.HandshakeContext(ctx)
-				}
+				err = tlsConn.HandshakeContext(ctx)
 				if err == nil {
 					break
 				}
@@ -86,7 +82,7 @@ var DefaultClient = http.Client{
 				if err != nil {
 					continue
 				}
-				tlsConn = tls.Client(conn, &tls.Config{
+				tlsConn = tls.Client(terasu.NewConn(conn), &tls.Config{
 					ServerName: host,
 					MinVersion: tls.VersionTLS12,
 				})

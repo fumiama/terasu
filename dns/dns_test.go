@@ -114,11 +114,11 @@ func (ds *DNSList) test() {
 			if err != nil {
 				continue
 			}
-			tlsConn := tls.Client(conn, &tls.Config{
+			tlsConn := tls.Client(terasu.NewConn(conn), &tls.Config{
 				ServerName: host,
 				MinVersion: tls.VersionTLS12,
 			})
-			err = terasu.Use(tlsConn).Handshake(4)
+			err = tlsConn.Handshake()
 			_ = tlsConn.Close()
 			if err == nil {
 				fmt.Println("succ:", host, addr.addr)
