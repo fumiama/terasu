@@ -1,3 +1,4 @@
+// Package http is the same as the standard http lib
 package http
 
 import (

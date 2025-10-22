@@ -1,3 +1,4 @@
+// Package dns with DoT/DoH supports
 package dns
 
 import (

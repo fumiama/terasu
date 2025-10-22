@@ -1,3 +1,4 @@
+// Package http2 is the same as the standard http lib with HTTP2 client support
 package http2
 
 import (
