@@ -2,8 +2,6 @@ package terasu
 
 import (
 	"encoding/binary"
-	"encoding/hex"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -115,7 +113,6 @@ func (conn *Conn) ReadFrom(r io.Reader) (n int64, err error) {
 
 	// split
 	if x <= 4 { // first is in header range
-		fmt.Println(hex.EncodeToString(header[:]))
 		// first
 		binary.BigEndian.PutUint16(header[3:5], uint16(x))
 		bd.move(header[:5+x])

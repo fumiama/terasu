@@ -81,16 +81,16 @@ func (ds *dnsstat) disable(reEnable time.Duration) {
 	})
 }
 
-// DNSList is a bundle of DNSs
-type DNSList struct {
+// List is a bundle of DNSs
+type List struct {
 	sync.RWMutex
 	hostseq []string
 	m       map[string][]*dnsstat
 	b       map[string][]string
 }
 
-// DNSConfig is the user config
-type DNSConfig struct {
+// Config is the user config
+type Config struct {
 	Servers   map[string][]string `yaml:"Servers"`   // Servers map[dot.com]ip:ports
 	Fallbacks map[string][]string `yaml:"Fallbacks"` // Fallbacks map[domain]ips
 }
@@ -111,7 +111,7 @@ func hasfallback(lst []string, a string) bool {
 }
 
 // Add ...
-func (ds *DNSList) Add(c *DNSConfig) {
+func (ds *List) Add(c *Config) {
 	ds.Lock()
 	defer ds.Unlock()
 	addList := map[string][]*dnsstat{}
@@ -147,7 +147,7 @@ func (ds *DNSList) Add(c *DNSConfig) {
 }
 
 // rangeHosts in sequence, please use in rlock
-func (ds *DNSList) rangeHosts(fn func(host string, addrs []*dnsstat) error) error {
+func (ds *List) rangeHosts(fn func(host string, addrs []*dnsstat) error) error {
 	for _, h := range ds.hostseq {
 		if err := fn(h, ds.m[h]); err != nil {
 			return err
@@ -156,7 +156,7 @@ func (ds *DNSList) rangeHosts(fn func(host string, addrs []*dnsstat) error) erro
 	return nil
 }
 
-func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) (hosts []string, err error) {
+func (ds *List) lookupHostDoH(ctx context.Context, host string) (hosts []string, err error) {
 	ds.RLock()
 	defer ds.RUnlock()
 	// try to use DoH first
@@ -195,7 +195,7 @@ func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) (hosts []stri
 }
 
 // DialContext ...
-func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer) (tlsConn *tls.Conn, err error) {
+func (ds *List) DialContext(ctx context.Context, dialer *net.Dialer) (tlsConn *tls.Conn, err error) {
 	err = ErrNoDNSAvailable
 
 	if dialer == nil {
@@ -270,7 +270,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer) (tlsConn
 }
 
 // IPv6Servers should only be used when IPv6 is available
-var IPv6Servers = DNSList{
+var IPv6Servers = List{
 	hostseq: []string{
 		"dot.sb", "dns.google", "cloudflare-dns.com", "dns.opendns.com", "dns10.quad9.net",
 	},
@@ -307,7 +307,7 @@ var IPv6Servers = DNSList{
 }
 
 // IPv4Servers is the default server set
-var IPv4Servers = DNSList{
+var IPv4Servers = List{
 	hostseq: []string{
 		"dot.sb", "dns.google", "cloudflare-dns.com", "dns.opendns.com", "dns10.quad9.net",
 	},
@@ -346,7 +346,7 @@ var IPv4Servers = DNSList{
 // DefaultResolver ...
 var DefaultResolver = &net.Resolver{
 	PreferGo: true,
-	Dial: func(ctx context.Context, nw, _ string) (net.Conn, error) {
+	Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		if ip.IsIPv6Available {
 			return IPv6Servers.DialContext(ctx, nil)
 		}

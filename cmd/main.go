@@ -10,30 +10,31 @@ import (
 	"strings"
 
 	"github.com/fumiama/terasu/http2"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Println("Usage:", os.Args[0], "url")
+		logrus.Infoln("Usage:", os.Args[0], "url")
 		return
 	}
 	if !strings.HasPrefix(os.Args[1], "https://") {
-		fmt.Println("ERROR: invalid url")
+		logrus.Errorln("invalid url")
 		return
 	}
 	resp, err := http2.Get(os.Args[1])
 	if err != nil {
-		fmt.Println("ERROR:", err)
+		logrus.Errorln(err)
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		fmt.Println("ERROR:", "status code:", resp.StatusCode)
+		logrus.Errorln("status code:", resp.StatusCode)
 		return
 	}
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("ERROR:", err)
+		logrus.Errorln(err)
 		return
 	}
 	fmt.Print(string(data))

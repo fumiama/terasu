@@ -77,17 +77,17 @@ func TestBadDNS(t *testing.T) {
 		IPv4Servers.m = dotv4serversbak
 	}()
 	if ip.IsIPv6Available {
-		IPv6Servers = DNSList{
+		IPv6Servers = List{
 			m: map[string][]*dnsstat{},
 		}
-		IPv6Servers.Add(&DNSConfig{
+		IPv6Servers.Add(&Config{
 			Servers: map[string][]string{"test.bad.host": {"169.254.122.111"}},
 		})
 	} else {
-		IPv4Servers = DNSList{
+		IPv4Servers = List{
 			m: map[string][]*dnsstat{},
 		}
-		IPv4Servers.Add(&DNSConfig{
+		IPv4Servers.Add(&Config{
 			Servers: map[string][]string{"test.bad.host": {"169.254.122.111:853"}},
 		})
 	}
@@ -101,7 +101,7 @@ func TestBadDNS(t *testing.T) {
 	}
 }
 
-func (ds *DNSList) test() {
+func (ds *List) test() {
 	ds.RLock()
 	defer ds.RUnlock()
 	_ = ds.rangeHosts(func(host string, addrs []*dnsstat) error {
