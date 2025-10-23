@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -15,7 +14,7 @@ import (
 
 func main() {
 	if len(os.Args) != 2 {
-		logrus.Infoln("Usage:", os.Args[0], "url")
+		logrus.Infoln("usage:", os.Args[0], "url")
 		return
 	}
 	if !strings.HasPrefix(os.Args[1], "https://") {
@@ -32,10 +31,11 @@ func main() {
 		logrus.Errorln("status code:", resp.StatusCode)
 		return
 	}
-	data, err := io.ReadAll(resp.Body)
+
+	_, err = io.Copy(os.Stdout, resp.Body)
 	if err != nil {
 		logrus.Errorln(err)
 		return
 	}
-	fmt.Print(string(data))
+	logrus.Infoln("success.")
 }
