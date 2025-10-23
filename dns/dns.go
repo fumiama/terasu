@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -27,6 +28,7 @@ var dnsDialer = net.Dialer{
 	Timeout: time.Second * 4,
 }
 
+// SetTimeout ...
 func SetTimeout(t time.Duration) {
 	dnsDialer.Timeout = t
 }
@@ -37,6 +39,7 @@ type dnsstat struct {
 	keep bool
 }
 
+// String ...
 func (ds *dnsstat) String() string {
 	sb := strings.Builder{}
 	sb.WriteString("[addr: ")
@@ -78,6 +81,7 @@ func (ds *dnsstat) disable(reEnable time.Duration) {
 	})
 }
 
+// DNSList is a bundle of DNSs
 type DNSList struct {
 	sync.RWMutex
 	hostseq []string
@@ -85,6 +89,7 @@ type DNSList struct {
 	b       map[string][]string
 }
 
+// DNSConfig is the user config
 type DNSConfig struct {
 	Servers   map[string][]string `yaml:"Servers"`   // Servers map[dot.com]ip:ports
 	Fallbacks map[string][]string `yaml:"Fallbacks"` // Fallbacks map[domain]ips
@@ -102,14 +107,10 @@ func hasrecord(lst []*dnsstat, a string) bool {
 
 // hasrecord no lock, use under lock
 func hasfallback(lst []string, a string) bool {
-	for _, addr := range lst {
-		if addr == a {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(lst, a)
 }
 
+// Add ...
 func (ds *DNSList) Add(c *DNSConfig) {
 	ds.Lock()
 	defer ds.Unlock()
@@ -193,6 +194,7 @@ func (ds *DNSList) lookupHostDoH(ctx context.Context, host string) (hosts []stri
 	return nil, ErrNoDNSAvailable
 }
 
+// DialContext ...
 func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer) (tlsConn *tls.Conn, err error) {
 	err = ErrNoDNSAvailable
 
@@ -267,6 +269,7 @@ func (ds *DNSList) DialContext(ctx context.Context, dialer *net.Dialer) (tlsConn
 	return
 }
 
+// IPv6Servers should only be used when IPv6 is available
 var IPv6Servers = DNSList{
 	hostseq: []string{
 		"dot.sb", "dns.google", "cloudflare-dns.com", "dns.opendns.com", "dns10.quad9.net",
@@ -303,6 +306,7 @@ var IPv6Servers = DNSList{
 	b: map[string][]string{},
 }
 
+// IPv4Servers is the default server set
 var IPv4Servers = DNSList{
 	hostseq: []string{
 		"dot.sb", "dns.google", "cloudflare-dns.com", "dns.opendns.com", "dns10.quad9.net",
@@ -339,6 +343,7 @@ var IPv4Servers = DNSList{
 	b: map[string][]string{},
 }
 
+// DefaultResolver ...
 var DefaultResolver = &net.Resolver{
 	PreferGo: true,
 	Dial: func(ctx context.Context, nw, _ string) (net.Conn, error) {

@@ -18,6 +18,7 @@ import (
 )
 
 var (
+	// ErrEmptyHostAddress ...
 	ErrEmptyHostAddress = errors.New("empty host addr")
 )
 
@@ -29,25 +30,43 @@ const (
 	recordTypeAAAA recordType = 28
 )
 
+// dohjsonresponse represents the JSON response structure for DNS over HTTPS (DoH) queries.
+// It contains DNS query results and metadata about the response.
 type dohjsonresponse struct {
-	Status   uint32
-	TC       bool
-	RD       bool
-	RA       bool
-	AD       bool
-	CD       bool
+	// Status indicates the DNS query status code (0 = NOERROR, etc.)
+	Status uint32
+	// TC indicates whether the response was truncated (true if truncated)
+	TC bool
+	// RD indicates whether recursion was requested in the query
+	RD bool
+	// RA indicates whether the server supports recursion
+	RA bool
+	// AD indicates whether the response was authenticated (DNSSEC)
+	AD bool
+	// CD indicates whether the client requested that DNSSEC validation be disabled
+	CD bool
+	// Question contains the DNS query question section with name and type
 	Question []struct {
-		Name string     `json:"name"`
+		// Name is the domain name being queried
+		Name string `json:"name"`
+		// Type is the DNS record type being requested (A, AAAA, etc.)
 		Type recordType `json:"type"`
 	}
+	// Answer contains the DNS response answer section with resource records
 	Answer []struct {
-		Name string     `json:"name"`
+		// Name is the domain name for this resource record
+		Name string `json:"name"`
+		// Type is the DNS record type (A, AAAA, etc.)
 		Type recordType `json:"type"`
-		TTL  uint16
+		// TTL is the time-to-live value for this resource record in seconds
+		TTL uint16
+		// Data is the textual representation of the resource record data
 		Data string `json:"data"`
 	}
+	// EdnsClientSubnet is the EDNS client subnet information for geolocation
 	EdnsClientSubnet string `json:"edns_client_subnet"`
-	Comment          string
+	// Comment is an optional comment field for additional information
+	Comment string
 }
 
 func (jr *dohjsonresponse) hosts() []string {

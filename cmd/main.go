@@ -1,4 +1,5 @@
-// Package main ...
+// Package main provides the main entry point for terasu.
+// It demonstrates basic Go usage of this library.
 package main
 
 import (

@@ -1,8 +1,9 @@
 package terasu
 
 import (
-	"bytes"
 	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -14,14 +15,19 @@ var DefaultFirstFragmentLen = 4
 
 // Conn remote: real server; local: relay
 type Conn struct {
-	mu    sync.Mutex
+	relay relay
+	init  *sync.Once
 	conn  *net.TCPConn
 	isold bool
 }
 
 // NewConn wraps *net.TCPConn (net.Conn must be *net.TCPConn)
 func NewConn(conn net.Conn) *Conn {
-	return &Conn{conn: conn.(*net.TCPConn)}
+	return &Conn{
+		relay: newrelay(),
+		init:  &sync.Once{},
+		conn:  conn.(*net.TCPConn),
+	}
 }
 
 // Write is send
@@ -29,14 +35,21 @@ func (conn *Conn) Write(b []byte) (int, error) {
 	if conn.isold || DefaultFirstFragmentLen == 0 {
 		return conn.conn.Write(b)
 	}
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-	n, err := conn.ReadFrom(bytes.NewReader(b))
-	return int(n), err
+	go conn.init.Do(func() {
+		_, err := io.Copy(conn, &conn.relay)
+		if err != nil {
+			_ = conn.relay.Close()
+		}
+	})
+	return conn.relay.Write(b)
 }
 
 // ReadFrom when client want to send to server, detect and split.
 func (conn *Conn) ReadFrom(r io.Reader) (n int64, err error) {
+	if conn.isold || DefaultFirstFragmentLen == 0 {
+		return conn.conn.ReadFrom(r)
+	}
+
 	// ContentType [0:1]
 	// Version [1:3]
 	// Length [3:5]
@@ -102,6 +115,7 @@ func (conn *Conn) ReadFrom(r io.Reader) (n int64, err error) {
 
 	// split
 	if x <= 4 { // first is in header range
+		fmt.Println(hex.EncodeToString(header[:]))
 		// first
 		binary.BigEndian.PutUint16(header[3:5], uint16(x))
 		bd.move(header[:5+x])
@@ -110,7 +124,7 @@ func (conn *Conn) ReadFrom(r io.Reader) (n int64, err error) {
 		if err != nil {
 			return
 		}
-		copy(header[5:5+x], header[9-x:9])
+		copy(header[5:9-x], header[5+x:9])
 		// second
 		binary.BigEndian.PutUint16(header[3:5], plen-uint16(x))
 		bd.move(header[:9-x])
@@ -138,6 +152,7 @@ PIPE:
 	if err != nil {
 		return
 	}
+	_ = conn.relay.Close()
 	cnt, err := bd.send(conn.conn, r)
 	n += cnt
 	return
