@@ -12,7 +12,7 @@ func TestClientGet(t *testing.T) {
 	dns.IPv6Servers = *dns.NewEmptyList()
 	dns.IPv4Servers.Add(&dns.Config{
 		Fallbacks: map[string][]string{
-			"www.whatsapp.com": {"157.240.253.60"},
+			"www.whatsapp.com": {"57.144.245.32"},
 		},
 	})
 	resp, err := Get("https://www.whatsapp.com/")
