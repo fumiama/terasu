@@ -89,6 +89,14 @@ type List struct {
 	b       map[string][]string
 }
 
+// NewEmptyList ...
+func NewEmptyList() *List {
+	return &List{
+		m: make(map[string][]*dnsstat, 64),
+		b: make(map[string][]string, 64),
+	}
+}
+
 // Config is the user config
 type Config struct {
 	Servers   map[string][]string `yaml:"Servers"`   // Servers map[dot.com]ip:ports

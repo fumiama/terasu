@@ -4,7 +4,9 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -14,23 +16,30 @@ var DefaultFirstFragmentLen = 4
 // Conn remote: real server; local: relay
 type Conn struct {
 	relay relay
+	isold uintptr
 	init  *sync.Once
 	conn  *net.TCPConn
-	isold bool
 }
 
 // NewConn wraps *net.TCPConn (net.Conn must be *net.TCPConn)
 func NewConn(conn net.Conn) *Conn {
-	return &Conn{
+	c := &Conn{
 		relay: newrelay(),
 		init:  &sync.Once{},
 		conn:  conn.(*net.TCPConn),
 	}
+	switch o := conn.(type) {
+	case *net.TCPConn:
+		c.conn = o
+	default:
+		panic("unsupported conn type: " + reflect.TypeOf(conn).String())
+	}
+	return c
 }
 
 // Write is send
 func (conn *Conn) Write(b []byte) (int, error) {
-	if conn.isold || DefaultFirstFragmentLen == 0 {
+	if atomic.LoadUintptr(&conn.isold) != 0 || DefaultFirstFragmentLen == 0 {
 		return conn.conn.Write(b)
 	}
 	go conn.init.Do(func() {
@@ -44,9 +53,11 @@ func (conn *Conn) Write(b []byte) (int, error) {
 
 // ReadFrom when client want to send to server, detect and split.
 func (conn *Conn) ReadFrom(r io.Reader) (n int64, err error) {
-	if conn.isold || DefaultFirstFragmentLen == 0 {
+	if atomic.LoadUintptr(&conn.isold) != 0 || DefaultFirstFragmentLen == 0 {
 		return conn.conn.ReadFrom(r)
 	}
+
+	defer atomic.StoreUintptr(&conn.isold, 1)
 
 	// ContentType [0:1]
 	// Version [1:3]
@@ -60,10 +71,6 @@ func (conn *Conn) ReadFrom(r io.Reader) (n int64, err error) {
 	plen := uint16(0)
 	var b []byte
 	bd := newbuilder()
-
-	defer func() {
-		conn.isold = true
-	}()
 
 	// ContentType [0:1] Version [1:2] 0x03
 	_, err = io.ReadFull(r, header[:2])
