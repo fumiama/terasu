@@ -17,8 +17,9 @@ func init() {
 	}
 	_, err := plugin.Open(TRSPluginFile)
 	if err != nil {
-		logrus.Warnln("[terasu.plugin] load", TRSPluginFile, "err:", err)
+		logrus.Warnln("[terasu.plugin] load ext", TRSPluginFile, "err:", err)
 		logrus.Warnln("[terasu.plugin] hint: ensure the main binary and plugin are built with identical flags (e.g. both use -trimpath -ldflags=\"-s -w\"), and avoid using 'go run'")
 		return
 	}
+	logrus.Infoln("[terasu.plugin] loaded ext", TRSPluginFile)
 }
