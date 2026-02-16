@@ -1,11 +1,9 @@
-package dns
+package doh
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,26 +11,22 @@ import (
 
 	"golang.org/x/net/http2"
 
-	"github.com/fumiama/terasu"
 	"github.com/fumiama/terasu/ip"
+	"github.com/fumiama/terasu/tls"
 )
 
-var (
-	// ErrEmptyHostAddress ...
-	ErrEmptyHostAddress = errors.New("empty host addr")
-)
-
-type recordType uint16
+// RecordType ...
+type RecordType uint16
 
 const (
-	recordTypeNone recordType = 0
-	recordTypeA    recordType = 1
-	recordTypeAAAA recordType = 28
+	RecordTypeNone RecordType = 0  // RecordTypeNone ...
+	RecordTypeA    RecordType = 1  // RecordTypeA IPv4
+	RecordTypeAAAA RecordType = 28 // RecordTypeAAAA IPv6
 )
 
-// dohjsonresponse represents the JSON response structure for DNS over HTTPS (DoH) queries.
+// Response represents the JSON response structure for DNS over HTTPS (DoH) queries.
 // It contains DNS query results and metadata about the response.
-type dohjsonresponse struct {
+type Response struct {
 	// Status indicates the DNS query status code (0 = NOERROR, etc.)
 	Status uint32
 	// TC indicates whether the response was truncated (true if truncated)
@@ -50,14 +44,14 @@ type dohjsonresponse struct {
 		// Name is the domain name being queried
 		Name string `json:"name"`
 		// Type is the DNS record type being requested (A, AAAA, etc.)
-		Type recordType `json:"type"`
+		Type RecordType `json:"type"`
 	}
 	// Answer contains the DNS response answer section with resource records
 	Answer []struct {
 		// Name is the domain name for this resource record
 		Name string `json:"name"`
 		// Type is the DNS record type (A, AAAA, etc.)
-		Type recordType `json:"type"`
+		Type RecordType `json:"type"`
 		// TTL is the time-to-live value for this resource record in seconds
 		TTL uint16
 		// Data is the textual representation of the resource record data
@@ -69,13 +63,13 @@ type dohjsonresponse struct {
 	Comment string
 }
 
-func (jr *dohjsonresponse) hosts() []string {
+func (jr *Response) Hosts() []string {
 	if len(jr.Answer) == 0 {
 		return nil
 	}
 	hosts := make([]string, 0, len(jr.Answer))
 	for _, ans := range jr.Answer {
-		if ans.Type == recordTypeA || ans.Type == recordTypeAAAA {
+		if ans.Type == RecordTypeA || ans.Type == RecordTypeAAAA {
 			hosts = append(hosts, ans.Data)
 		}
 	}
@@ -84,70 +78,29 @@ func (jr *dohjsonresponse) hosts() []string {
 
 var trsHTTP2ClientWithSystemDNS = http.Client{
 	Transport: &http2.Transport{
-		DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			addrs := lookupTable.Get(host)
-			if len(addrs) == 0 {
-				addrs, err = net.DefaultResolver.LookupHost(ctx, host)
-				if err != nil {
-					return nil, err
-				}
-				lookupTable.Set(host, addrs)
-			}
-			if len(addr) == 0 {
-				return nil, ErrEmptyHostAddress
-			}
-			var conn net.Conn
-			var tlsConn *tls.Conn
-			for _, a := range addrs {
-				conn, err = dnsDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
-				if err != nil {
-					continue
-				}
-				tlsConn = tls.Client(terasu.NewConn(conn), cfg)
-				err = tlsConn.HandshakeContext(ctx)
-				if err == nil {
-					break
-				}
-				_ = tlsConn.Close()
-				tlsConn = nil
-				conn, err = dnsDialer.DialContext(ctx, network, net.JoinHostPort(a, port))
-				if err != nil {
-					continue
-				}
-				tlsConn = tls.Client(terasu.NewConn(conn), cfg)
-				err = tlsConn.HandshakeContext(ctx)
-				if err == nil {
-					break
-				}
-				_ = tlsConn.Close()
-				tlsConn = nil
-			}
-			return tlsConn, err
-		},
+		DialTLSContext: tls.DialTLSContextWithConfigAndSystemResolver,
 	},
 }
 
-func lookupdoh(ctx context.Context, server, u string) (jr dohjsonresponse, err error) {
-	jr, err = lookupdohwithtype(ctx, server, u, preferreddohtype())
+// LookupDoH lookup uname's ip from server
+func LookupDoH(ctx context.Context, server, name string) (jr Response, err error) {
+	jr, err = LookupDoHWithType(ctx, server, name, prefertyp())
 	if err == nil {
 		return
 	}
 	if ip.IsIPv6Available {
-		jr, err = lookupdohwithtype(ctx, server, u, recordTypeA)
+		jr, err = LookupDoHWithType(ctx, server, name, RecordTypeA)
 	}
 	return
 }
 
-func lookupdohwithtype(ctx context.Context, server, u string, typ recordType) (jr dohjsonresponse, err error) {
+// LookupDoHWithType ...
+func LookupDoHWithType(ctx context.Context, server, name string, typ RecordType) (jr Response, err error) {
 	sb := strings.Builder{}
 	sb.WriteString(server)
 	sb.WriteString("?name=")
-	sb.WriteString(url.QueryEscape(u))
-	if typ != recordTypeNone {
+	sb.WriteString(url.QueryEscape(name))
+	if typ != RecordTypeNone {
 		sb.WriteString("&type=")
 		sb.WriteString(strconv.Itoa(int(typ)))
 	}
@@ -171,9 +124,9 @@ func lookupdohwithtype(ctx context.Context, server, u string, typ recordType) (j
 	return
 }
 
-func preferreddohtype() recordType {
+func prefertyp() RecordType {
 	if ip.IsIPv6Available {
-		return recordTypeAAAA
+		return RecordTypeAAAA
 	}
-	return recordTypeA
+	return RecordTypeA
 }

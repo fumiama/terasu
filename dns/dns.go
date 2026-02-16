@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/fumiama/terasu"
+	"github.com/fumiama/terasu/dialer"
+	"github.com/fumiama/terasu/doh"
 	"github.com/fumiama/terasu/ip"
 	"github.com/sirupsen/logrus"
 )
@@ -23,15 +25,6 @@ var (
 	// ErrSuccess is designed for range hosts to break
 	ErrSuccess = errors.New("success")
 )
-
-var dnsDialer = net.Dialer{
-	Timeout: time.Second * 4,
-}
-
-// SetTimeout ...
-func SetTimeout(t time.Duration) {
-	dnsDialer.Timeout = t
-}
 
 type dnsstat struct {
 	addr string
@@ -173,9 +166,9 @@ func (ds *List) lookupHostDoH(ctx context.Context, host string) (hosts []string,
 			if !addr.enabled() || !addr.ishttps() { // disabled or is not DoH
 				continue
 			}
-			jr, err := lookupdoh(ctx, addr.addr, host)
+			jr, err := doh.LookupDoH(ctx, addr.addr, host)
 			if err == nil {
-				hosts = jr.hosts()
+				hosts = jr.Hosts()
 				if len(hosts) > 0 {
 					// this is a successful server, keep it
 					addr.keepit()
@@ -203,11 +196,11 @@ func (ds *List) lookupHostDoH(ctx context.Context, host string) (hosts []string,
 }
 
 // DialContext ...
-func (ds *List) DialContext(ctx context.Context, dialer *net.Dialer) (tlsConn *tls.Conn, err error) {
+func (ds *List) DialContext(ctx context.Context, d *net.Dialer) (tlsConn *tls.Conn, err error) {
 	err = ErrNoDNSAvailable
 
-	if dialer == nil {
-		dialer = &dnsDialer
+	if d == nil {
+		d = &dialer.DefaultDialer
 	}
 
 	ds.RLock()
@@ -220,16 +213,16 @@ func (ds *List) DialContext(ctx context.Context, dialer *net.Dialer) (tlsConn *t
 				continue
 			}
 			logrus.Debugln("[terasu.dns] -> dial", host, addr)
-			if dialer.Timeout != 0 {
+			if d.Timeout != 0 {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(context.Background(), dialer.Timeout)
+				ctx, cancel = context.WithTimeout(context.Background(), d.Timeout)
 				defer cancel()
-			} else if !dialer.Deadline.IsZero() {
+			} else if !d.Deadline.IsZero() {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithDeadline(context.Background(), dialer.Deadline)
+				ctx, cancel = context.WithDeadline(context.Background(), d.Deadline)
 				defer cancel()
 			}
-			conn, err = dialer.DialContext(ctx, "tcp", addr.addr)
+			conn, err = d.DialContext(ctx, "tcp", addr.addr)
 			if err != nil {
 				logrus.Debugln("[terasu.dns] -- dial tcp", host, addr, "err:", err)
 				if !errors.Is(err, context.Canceled) &&
@@ -247,13 +240,13 @@ func (ds *List) DialContext(ctx context.Context, dialer *net.Dialer) (tlsConn *t
 				NextProtos: []string{"dns"},
 			})
 			// re-init ctx due to deadline settings in tcp dial
-			if dialer.Timeout != 0 {
+			if d.Timeout != 0 {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(context.Background(), dialer.Timeout)
+				ctx, cancel = context.WithTimeout(context.Background(), d.Timeout)
 				defer cancel()
-			} else if !dialer.Deadline.IsZero() {
+			} else if !d.Deadline.IsZero() {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithDeadline(context.Background(), dialer.Deadline)
+				ctx, cancel = context.WithDeadline(context.Background(), d.Deadline)
 				defer cancel()
 			}
 			err = tlsConn.HandshakeContext(ctx)

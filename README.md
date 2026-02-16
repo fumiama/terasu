@@ -19,3 +19,14 @@ tls.Client(terasu.NewConn(conn), &tls.Config{
     ServerName: host,
 }).Handshake()
 ```
+
+## Custom Plugin (Linux Only)
+
+Custom plugin code is located in the `ext/custom` directory. You can write and build your own plugin.
+
+1. Write your plugin code in the `ext/custom` directory
+2. Build the plugin:
+
+```bash
+GOOS=linux go build -o terasu.plugin.so -buildmode=plugin -ldflags="-s -w" -trimpath ./ext/custom
+```

@@ -13,9 +13,9 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"time"
 
 	base14 "github.com/fumiama/go-base16384"
+	"github.com/fumiama/terasu/dialer"
 	"github.com/fumiama/terasu/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -23,16 +23,6 @@ import (
 
 // ErrEmptyHostAddress is returned when DNS lookup for a host returns no addresses
 var ErrEmptyHostAddress = errors.New("empty host addr")
-
-// defaultDialer is the default dialer used for establishing TCP connections
-var defaultDialer = net.Dialer{
-	Timeout: 10 * time.Second,
-}
-
-// SetDefaultClientTimeout sets the default timeout for all HTTP2 client connections
-func SetDefaultClientTimeout(t time.Duration) {
-	defaultDialer.Timeout = t
-}
 
 // DefaultClient is the default HTTP2 client that supports HTTP/2 and DNS resolution
 var DefaultClient = http.Client{
@@ -52,13 +42,13 @@ var DefaultClient = http.Client{
 			var conn net.Conn
 			var qConn quic.EarlyConnection
 			for _, a := range addrs {
-				if defaultDialer.Timeout != 0 {
+				if dialer.DefaultDialer.Timeout != 0 {
 					var cancel context.CancelFunc
-					ctx, cancel = context.WithTimeout(context.Background(), defaultDialer.Timeout)
+					ctx, cancel = context.WithTimeout(context.Background(), dialer.DefaultDialer.Timeout)
 					defer cancel()
-				} else if !defaultDialer.Deadline.IsZero() {
+				} else if !dialer.DefaultDialer.Deadline.IsZero() {
 					var cancel context.CancelFunc
-					ctx, cancel = context.WithDeadline(context.Background(), defaultDialer.Deadline)
+					ctx, cancel = context.WithDeadline(context.Background(), dialer.DefaultDialer.Deadline)
 					defer cancel()
 				}
 				conn, err = net.ListenUDP("udp", nil)
@@ -76,13 +66,13 @@ var DefaultClient = http.Client{
 				_ = e.Close()
 				_, _ = ucon.WriteToUDP(w.Bytes(), raddr)
 				// re-init ctx due to deadline settings in tcp dial
-				if defaultDialer.Timeout != 0 {
+				if dialer.DefaultDialer.Timeout != 0 {
 					var cancel context.CancelFunc
-					ctx, cancel = context.WithTimeout(context.Background(), defaultDialer.Timeout)
+					ctx, cancel = context.WithTimeout(context.Background(), dialer.DefaultDialer.Timeout)
 					defer cancel()
-				} else if !defaultDialer.Deadline.IsZero() {
+				} else if !dialer.DefaultDialer.Deadline.IsZero() {
 					var cancel context.CancelFunc
-					ctx, cancel = context.WithDeadline(context.Background(), defaultDialer.Deadline)
+					ctx, cancel = context.WithDeadline(context.Background(), dialer.DefaultDialer.Deadline)
 					defer cancel()
 				}
 				qConn, err = quic.DialEarly(ctx, ucon, raddr, tlsCfg, cfg)

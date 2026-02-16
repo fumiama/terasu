@@ -5,17 +5,16 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/netip"
 	"testing"
+
+	"github.com/fumiama/terasu/dialer"
 )
 
 func TestHTTPDialDifferentFragLen(t *testing.T) {
 	cli := http.Client{
 		Transport: &http.Transport{
 			DialTLS: func(network, addr string) (net.Conn, error) {
-				conn, err := net.DialTCP("tcp", nil, net.TCPAddrFromAddrPort(
-					netip.MustParseAddrPort("52.222.136.117:443"),
-				))
+				conn, err := dialer.DefaultDialer.Dial("tcp", "3.164.110.114:443")
 				if err != nil {
 					return nil, err
 				}
@@ -57,9 +56,7 @@ func TestHTTPDialTLS13(t *testing.T) {
 	cli := http.Client{
 		Transport: &http.Transport{
 			DialTLS: func(network, addr string) (net.Conn, error) {
-				conn, err := net.DialTCP("tcp", nil, net.TCPAddrFromAddrPort(
-					netip.MustParseAddrPort("52.222.136.117:443"),
-				))
+				conn, err := dialer.DefaultDialer.Dial("tcp", "3.164.110.114:443")
 				if err != nil {
 					return nil, err
 				}
@@ -97,9 +94,7 @@ func TestHTTPDialTLS12(t *testing.T) {
 	cli := http.Client{
 		Transport: &http.Transport{
 			DialTLS: func(network, addr string) (net.Conn, error) {
-				conn, err := net.DialTCP("tcp", nil, net.TCPAddrFromAddrPort(
-					netip.MustParseAddrPort("52.222.136.117:443"),
-				))
+				conn, err := dialer.DefaultDialer.Dial("tcp", "3.164.110.114:443")
 				if err != nil {
 					return nil, err
 				}

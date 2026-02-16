@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	_ "github.com/fumiama/terasu/ext"
 	"github.com/fumiama/terasu/http2"
 	"github.com/sirupsen/logrus"
 )

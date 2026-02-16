@@ -4,11 +4,11 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net"
 	"testing"
 	"time"
 
 	"github.com/fumiama/terasu"
+	"github.com/fumiama/terasu/dialer"
 	"github.com/fumiama/terasu/ip"
 )
 
@@ -110,7 +110,7 @@ func (ds *List) test() {
 				continue
 			}
 			fmt.Println("dial:", host, addr.addr)
-			conn, err := net.Dial("tcp", addr.addr)
+			conn, err := dialer.DefaultDialer.Dial("tcp", addr.addr)
 			if err != nil {
 				continue
 			}
