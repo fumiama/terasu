@@ -35,6 +35,7 @@ go build -o terasu.plugin.so -buildmode=plugin -ldflags="-s -w" -trimpath ./ext/
 ```bash
 sudo apt-get update
 sudo apt-get install -y build-essential module-assistant gcc-9-multilib-i686-linux-gnu g++-9-multilib-i686-linux-gnu
+
 wget -nv https://downloads.openwrt.org/releases/23.05.3/targets/ipq807x/generic/openwrt-sdk-23.05.3-ipq807x-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
 tar -xJf openwrt-sdk-23.05.3-ipq807x-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
 mv openwrt-sdk-23.05.3-ipq807x-generic_gcc-12.3.0_musl.Linux-x86_64 op23053-ipq807x
@@ -50,4 +51,26 @@ echo $CGO_LDFLAGS
 export GOGCCFLAGS=$GOGCCFLAGS" -fuse-ld=bfd"
 echo $GOGCCFLAGS
 CGO_ENABLED=1 GOOS=linux GOARCH=arm64 GOARM=8 CC=aarch64-openwrt-linux-gcc CXX=aarch64-openwrt-linux-g++ AR=aarch64-openwrt-linux-ar go build -o terasu.plugin.so -buildmode=plugin -ldflags="-s -w" -trimpath ./ext/custom
+```
+
+### Example 2. Build for OpenWrt amd64
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential module-assistant gcc-9-multilib-i686-linux-gnu g++-9-multilib-i686-linux-gnu
+
+wget -nv https://archive.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+tar -xJf openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+mv openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64 op23053-x64
+rm openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+
+PATH=$PATH:`pwd`/op23053-x64/staging_dir/toolchain-x86_64_gcc-12.3.0_musl/bin/
+export PATH
+export STAGING_DIR=`pwd`/op23053-x64/staging_dir/toolchain-x86_64_gcc-12.3.0_musl/
+export CGO_CFLAGS=$CGO_CFLAGS" -fuse-ld=bfd"
+echo $CGO_CFLAGS
+export CGO_LDFLAGS=$CGO_LDFLAGS" -fuse-ld=bfd"
+echo $CGO_LDFLAGS
+export GOGCCFLAGS=$GOGCCFLAGS" -fuse-ld=bfd"
+echo $GOGCCFLAGS
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC=x86_64-openwrt-linux-gcc CXX=x86_64-openwrt-linux-g++ AR=x86_64-openwrt-linux-ar go build -o terasu.plugin.so -buildmode=plugin -ldflags="-s -w" -trimpath ./ext/custom
 ```
