@@ -67,6 +67,11 @@ func (r *relay) Write(p []byte) (n int, err error) {
 
 // Close ...
 func (r *relay) Close() error {
-	close(r.buf)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.buf != nil {
+		close(r.buf)
+		r.buf = nil
+	}
 	return nil
 }
